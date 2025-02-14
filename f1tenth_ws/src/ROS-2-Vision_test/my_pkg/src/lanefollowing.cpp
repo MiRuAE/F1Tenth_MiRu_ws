@@ -20,7 +20,7 @@ public:
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
     // PID 파라미터 선언 및 불러오기
-    this->declare_parameter<double>("Kp", 0.1);
+    this->declare_parameter<double>("Kp", 0.01);
     this->declare_parameter<double>("Ki", 0.00);
     this->declare_parameter<double>("Kd", 0.00);
     this->get_parameter("Kp", Kp_);
@@ -128,7 +128,7 @@ private:
     cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
     cv::Mat mask;
     // 밝은 영역 범위를 조정하여 불필요한 잡음을 줄임
-    cv::inRange(hsv, cv::Scalar(0, 0, 200), cv::Scalar(180, 30, 255), mask);
+    cv::inRange(hsv, cv::Scalar(0, 0, 100), cv::Scalar(180, 30, 255), mask);
 
     // 2. 가우시안 블러를 통해 노이즈 제거
     cv::Mat blurred;
@@ -182,7 +182,7 @@ private:
     }
 
     // ROI의 상단과 하단 y 좌표
-    int y_top = height/2;
+    int y_top = height / 3;
     int y_bottom = height - 1;
     int left_x_top = 0, left_x_bottom = 0;
     int right_x_top = 0, right_x_bottom = 0;
@@ -219,16 +219,21 @@ private:
     double steering = -(Kp_ * error + Ki_ * integral_ + Kd_ * derivative);
     previous_error_ = error;
 
-    // 차량 제어 명령 퍼블리시
+    // 차량 제어 명령 퍼블리시ython3 camera_topic_node.py   miru@ubuntu
+[ WARN:0] global ./modules/videoio/src/cap_gstreamer.cpp (1100) open OpenCV | GStreamer warning: Cannot query video position: status=0, value=-1, duration=-1
+[ WARN:0] global ./modules/videoio/src/cap_gstreamer.cpp (2075) handleMessage OpenCV | GStreamer warning: Embedded video playback halted; module v4l2src0 reported: Internal data stream error.
+[ WARN:0] global ./modules/videoio/src/cap_gstreamer.cpp (651) startPipeline OpenCV | GStreamer warning: unable to start pipeline
+[ WARN:0] global ./modules/videoio/src/cap_gstreamer.cpp (1257) setProperty OpenCV | GStreamer warning: no pipeline
+
     auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
     drive_msg.header.stamp = this->now();
-    drive_msg.drive.steering_angle = steering;
-    drive_msg.drive.speed = 0.5;
+    drive_msg.drive.steering_angle = steering / 4;
+    drive_msg.drive.speed = 1.0;
     drive_pub_->publish(drive_msg);
 
     // 14. 시각화: 차선 중앙 및 스티어링 값 표시
     cv::circle(visFrame, cv::Point(lane_center_x, y_bottom), 10, cv::Scalar(0, 0, 255), -1);
-    std::string text = "Steering: " + std::to_string(steering);
+    std::string text = "Steering: " + std::to_string(steering / 4);
     cv::putText(visFrame, text, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1,
                 cv::Scalar(255, 0, 0), 2);
 
