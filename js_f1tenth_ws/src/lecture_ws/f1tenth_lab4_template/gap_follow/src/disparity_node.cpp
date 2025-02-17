@@ -84,19 +84,72 @@ private:
 
     
 
-    void find_max_gap(float* ranges, int* indice)
+    /*void find_max_gap(float* ranges, int* indice)*/
+    int find_max_gap(std::vector<float> ranges)
     {   
         // Return the start index & end index of the max gap in free_space_ranges
-        return;
+        double max_dist = 0.0;
+        int max_index = 0;
+        std::vector<int> max_points_vec;
+        
+        // 최대값 찾기
+        for(int i = right_wing_index; i <= left_wing_index; i++) {
+            if(ranges[i] > max_dist) {
+                max_dist = ranges[i];
+            }
+        }
+        
+        // 최대값을 가진 인덱스들 찾기
+        for(int i = right_wing_index; i <= left_wing_index; i++) {
+            if(ranges[i] == max_dist) {
+                max_points_vec.push_back(i);
+            }
+        }
+
+        // 연속된 인덱스들의 가장 긴 구간 찾기
+        int current_start = max_points_vec[0];
+        int current_length = 1;
+        int max_gap_start = current_start;
+        int max_gap_length = 1;
+        
+        for(int i = 1; i < max_points_vec.size(); i++) {
+            // 연속된 인덱스인 경우
+            if(max_points_vec[i] == max_points_vec[i-1] + 1) {
+                current_length++;
+            } 
+            // 연속이 끊긴 경우
+            else {
+                // 현재까지의 구간이 최대 길이보다 크면 갱신
+                if(current_length > max_gap_length) {
+                    max_gap_length = current_length;
+                    max_gap_start = current_start;
+                }
+                // 새로운 구간 시작
+                current_start = max_points_vec[i];
+                current_length = 1;
+            }
+        }
+        
+        // 마지막 구간 체크
+        if(current_length > max_gap_length) {
+            max_gap_length = current_length;
+            max_gap_start = current_start;
+        }
+        
+        // 가장 긴 연속 구간의 중간점을 최적의 주행 포인트로 선택
+        int best_point_index = max_gap_start + (max_gap_length / 2);
+
+        /*RCLCPP_INFO(this->get_logger(), "Bestpoint_index_debug: %d", best_point_index);*/
+        return best_point_index;
     }
 
-    void find_best_point(float* ranges, int* indice)
-    {   
-        // Start_i & end_i are start and end indicies of max-gap range, respectively
-        // Return index of best point in ranges
-	    // Naive: Choose the furthest point within ranges and go there
-        return;
-    }
+    /*void find_best_point(float* ranges, int* indice)*/
+    /*{   */
+    /*    // Start_i & end_i are start and end indicies of max-gap range, respectively*/
+    /*    // Return index of best point in ranges*/
+    /* // Naive: Choose the furthest point within ranges and go there*/
+    /*    return;*/
+    /*}*/
 
 
     void lidar_callback(const sensor_msgs::msg::LaserScan::SharedPtr scan_msg) 
@@ -122,10 +175,39 @@ private:
 
         std::vector<float> processed_ranges(scan_msg->ranges.begin(), scan_msg->ranges.end());
         processed_ranges = preprocess_lidar(scan_msg->ranges, gap_mean, angle_increment);
-        double min_range = 100.0;
-        int min_index = 0;
+        /*double min_range = 100.0;*/
+        /*int min_index = 0;*/
+
+        int best_point_index = find_max_gap(processed_ranges);
+        
+
+        // Publish Drive message
+        
+        auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
+        // TODO: fill in drive message and publish
+        double steering_angle = scan_msg->angle_min + (scan_msg->angle_increment * best_point_index);
+        double drive_speed = 0.0;
+        double steering_degree = std::abs(steering_angle * 180 / M_PI);
+
+        //-------------------- Normal Mode -----------------//
+        if (steering_degree <= 5.0) {  // 거의 직진
+            drive_speed = 1.2;
+        } else if (steering_degree <= 10.0) {  // 약간의 커브
+            drive_speed = 1.0;
+        } else if (steering_degree <= 15.0) {  // 완만한 커브
+            drive_speed = 0.8;
+        } else {  // 중간 커브
+            drive_speed = 0.5;
+        }
+        //-------------------- Normal Mode -----------------//
 
         
+        drive_msg.drive.steering_angle = steering_angle;
+        drive_msg.drive.speed = drive_speed;
+        
+        drive_pub_->publish(drive_msg);
+
+
         /// TODO:
         // Find disparity point to LiDAR
         
