@@ -4,7 +4,7 @@
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "ackermann_msgs/msg/ackermann_drive_stamped.hpp"
-#inclue <vector>
+#include <vector>
 #include <cmath>
 /// CHECK: include needed ROS msg type headers and libraries
 
@@ -47,23 +47,23 @@ private:
         double scan_threshold = 3.0;
         int window_size = 9;
         int padding = window_size / 2;
-        dobule car_radius = car_width / 2;
+        double car_radius = car_width / 2;
         int car_bubble_point = 0;
 
         // From right_wing_index ~ left_wing_index, scan for the disparity spots
-        for(i = right_wing_index; i <= left_wing_index; i ++) {
+        for(int i = right_wing_index; i <= left_wing_index; i ++) {
             double diff = ranges[i] - ranges[i+1];
             if(diff < 0 && -diff > gap_mean)
             {
                 car_bubble_point = (car_radius / ranges[i]) / angle_increment;
-                for(j = i - car_bubble_point; j <= i; j ++) {
+                for(int j = i - car_bubble_point; j <= i; j ++) {
                     ranges[j] = ranges[i];
                 }
             }
             else if(diff > 0 && diff > gap_mean)
             {
                 car_bubble_point = (car_radius / ranges[i+1]) / angle_increment;
-                for(j = i; j <= i + car_bubble_point; j ++) {
+                for(int j = i; j <= i + car_bubble_point; j ++) {
                     ranges[j] = ranges[i+1];
                 }
             }
