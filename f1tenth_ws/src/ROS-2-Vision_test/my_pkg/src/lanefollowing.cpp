@@ -87,8 +87,8 @@ private:
                int left_count, int right_count, int lane_width_pixels_) {
     double left_x = 0, right_x = 0;
     int degree;
-    bool leftFound = (!leftPoly.empty() && left_count >= min_left_points);
-    bool rightFound = (!rightPoly.empty() && right_count >= min_right_points);
+    bool leftFound = (left_count >= min_left_points);
+    bool rightFound = (right_count >= min_right_points);
 
     if (leftFound) {
         degree = static_cast<int>(leftPoly.size()) - 1;
@@ -139,13 +139,13 @@ private:
     cv::Mat mask;
     
     // white line
-    cv::inRange(hsv, cv::Scalar(0, 0, 200), cv::Scalar(180, 30, 255), mask);
+    //cv::inRange(hsv, cv::Scalar(0, 0, 200), cv::Scalar(180, 30, 255), mask);
     
     // yellow line
     //cv::inRange(hsv, cv::Scalar(20, 50, 120), cv::Scalar(70, 255, 255), mask);
     
     // black line
-    //cv::inRange(hsv, cv::Scalar(0, 0, 0), cv::Scalar(180, 255, 50), mask);
+    cv::inRange(hsv, cv::Scalar(0, 0, 0), cv::Scalar(180, 255, 100), mask);
 
     // gaussianblur
     cv::Mat blurred;
@@ -165,7 +165,7 @@ private:
     cv::ximgproc::thinning(edges, thinEdges, cv::ximgproc::THINNING_ZHANGSUEN);
     
      //ROI
-    cv::Rect roi_rect(0, height/2, width, height/2);
+    cv::Rect roi_rect(0, height * 2 / 3, width, height / 3);
     cv::Mat roi = thinEdges(roi_rect);
 
     // Get non-zero points in ROI
@@ -185,16 +185,15 @@ private:
     }
 
     // Fit a polynomial
-    std::vector<double> leftPoly = polyFit(leftPoints, 3);
-    std::vector<double> rightPoly = polyFit(rightPoints, 3);
-
-    // Check if lanes are detected based on the number of points
-    bool leftDetected = (leftPoints.size() > 50);
-    bool rightDetected = (rightPoints.size() > 50); 
+    std::vector<double> leftPoly = polyFit(leftPoints, 1);
+    std::vector<double> rightPoly = polyFit(rightPoints, 1);
 
     // Get lane center using lane width compensation at the bottom
-    int lane_width_pixel_ = width / 1.5;
-    int lane_center_x = LaneCenter(leftPoly, rightPoly, height - 1, 50, 50, leftPoints.size(), rightPoints.size(), lane_width_pixel_);
+    
+    int left_threshold = 200;
+    int right_threshold = 200;
+    int lane_width_pixel_ = width;
+    int lane_center_x = LaneCenter(leftPoly, rightPoly, height - 1, left_threshold, right_threshold, leftPoints.size(), rightPoints.size(), lane_width_pixel_);
     
     // 시각화 (디버깅용)
     cv::Mat visFrame = frame.clone();
@@ -232,7 +231,7 @@ private:
     auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
     drive_msg.header.stamp = this->now();
     drive_msg.drive.steering_angle = steering / 3;
-    drive_msg.drive.speed = 0.5;
+    drive_msg.drive.speed = 0.7;
     drive_pub_->publish(drive_msg);
 
     // visualize
