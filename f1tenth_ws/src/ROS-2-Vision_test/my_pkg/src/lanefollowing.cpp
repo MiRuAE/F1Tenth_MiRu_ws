@@ -4,7 +4,6 @@
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/highgui/highgui.hpp>
-// ximgproc 헤더 (opencv_contrib 모듈 필요)
 #include <opencv2/ximgproc.hpp>
 #include <vector>
 #include <numeric>
@@ -19,7 +18,7 @@ public:
   {
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
-    // PID 파라미터 선언 및 불러오기
+    // PID parameters
     this->declare_parameter<double>("Kp", 0.01);
     this->declare_parameter<double>("Ki", 0.00);
     this->declare_parameter<double>("Kd", 0.00);
@@ -72,7 +71,7 @@ private:
   void lane_visualize(cv::Mat &img, const std::vector<double>& poly, cv::Scalar color) {
   
     if(poly.empty()) return;
-    int degree = poly.size() - 1; // 보통 2
+    int degree = poly.size() - 1;
     for (int y = img.rows/2; y < img.rows; y++) {
       double x = 0;
       for (int j = 0; j < poly.size(); j++) {
@@ -82,29 +81,42 @@ private:
     }
   }
 
-  // 하단에서 좌우 다항식 곡선을 통해 계산된 x좌표로 차선 중앙을 구함
-  int LaneCenter(const std::vector<double>& leftPoly, const std::vector<double>& rightPoly, int y) {
-  
+  // center of lane
+  int LaneCenter(const std::vector<double>& leftPoly, const std::vector<double>& rightPoly,
+               int y, int min_left_points, int min_right_points,
+               int left_count, int right_count, int lane_width_pixels_) {
     double left_x = 0, right_x = 0;
     int degree;
-    if (!leftPoly.empty()) {
-      degree = leftPoly.size() - 1;
-      for (int j = 0; j < leftPoly.size(); j++) {
-        left_x += leftPoly[j] * std::pow(y, degree - j);
-      }
+    bool leftFound = (!leftPoly.empty() && left_count >= min_left_points);
+    bool rightFound = (!rightPoly.empty() && right_count >= min_right_points);
+
+    if (leftFound) {
+        degree = static_cast<int>(leftPoly.size()) - 1;
+        for (size_t j = 0; j < leftPoly.size(); j++) {
+            left_x += leftPoly[j] * std::pow(y, degree - j);
+        }
     }
-    if (!rightPoly.empty()) {
-      degree = rightPoly.size() - 1;
-      for (int j = 0; j < rightPoly.size(); j++) {
-        right_x += rightPoly[j] * std::pow(y, degree - j);
-      }
+    if (rightFound) {
+        degree = static_cast<int>(rightPoly.size()) - 1;
+        for (size_t j = 0; j < rightPoly.size(); j++) {
+            right_x += rightPoly[j] * std::pow(y, degree - j);
+        }
     }
-    if (!leftPoly.empty() && !rightPoly.empty())
-      return static_cast<int>((left_x + right_x) / 2);
-    if (!leftPoly.empty())
-      return static_cast<int>(left_x + 200);
-    if (!rightPoly.empty())
-      return static_cast<int>(right_x - 200);
+
+    // If both lanes are found, average them.
+    if (leftFound && rightFound) {
+        return static_cast<int>((left_x + right_x) / 2);
+    }
+    // If only left lane is found, estimate center using lane width.
+    else if (leftFound) {
+        return static_cast<int>(left_x + lane_width_pixels_ / 2.0);
+    }
+    // If only right lane is found, estimate center using lane width.
+    else if (rightFound) {
+        return static_cast<int>(right_x - lane_width_pixels_ / 2.0);
+    }
+    
+    // If neither lane is found, return an error value.
     return -1;
   }
 
@@ -127,11 +139,13 @@ private:
     cv::Mat mask;
     
     // white line
-    //cv::inRange(hsv, cv::Scalar(0, 0, 200), cv::Scalar(180, 30, 255), mask);
+    cv::inRange(hsv, cv::Scalar(0, 0, 200), cv::Scalar(180, 30, 255), mask);
     
     // yellow line
-    cv::inRange(hsv, cv::Scalar(20, 50, 120), cv::Scalar(70, 255, 255), mask);
-
+    //cv::inRange(hsv, cv::Scalar(20, 50, 120), cv::Scalar(70, 255, 255), mask);
+    
+    // black line
+    //cv::inRange(hsv, cv::Scalar(0, 0, 0), cv::Scalar(180, 255, 50), mask);
 
     // gaussianblur
     cv::Mat blurred;
@@ -149,42 +163,67 @@ private:
     // Thinning
     cv::Mat thinEdges;
     cv::ximgproc::thinning(edges, thinEdges, cv::ximgproc::THINNING_ZHANGSUEN);
-
-    // ROI setting
+    
+     //ROI
     cv::Rect roi_rect(0, height/2, width, height/2);
     cv::Mat roi = thinEdges(roi_rect);
 
-    // edge
+    // Get non-zero points in ROI
     std::vector<cv::Point> roiPoints;
     cv::findNonZero(roi, roiPoints);
     for(auto &pt : roiPoints) {
-      pt.y += height/2;
+        pt.y += height/2;
     }
 
-    // seperate left / right lane
+    // Split points into left and right based on center
     std::vector<cv::Point> leftPoints, rightPoints;
     for(const auto &pt : roiPoints) {
-      if(pt.x < width/2)
-        leftPoints.push_back(pt);
-      else
-        rightPoints.push_back(pt);
+        if(pt.x < width/2)
+            leftPoints.push_back(pt);
+        else
+            rightPoints.push_back(pt);
     }
 
-    // poly fitting --> 2 order
+    // Fit a polynomial
     std::vector<double> leftPoly = polyFit(leftPoints, 3);
     std::vector<double> rightPoly = polyFit(rightPoints, 3);
 
-    // Visualizing lane
-    cv::Mat visFrame = frame.clone();
-    lane_visualize(visFrame, leftPoly, cv::Scalar(255, 0, 0));   // left lane --> blue
-    lane_visualize(visFrame, rightPoly, cv::Scalar(0, 255, 0));   // right lane --> green
+    // Check if lanes are detected based on the number of points
+    bool leftDetected = (leftPoints.size() > 50);
+    bool rightDetected = (rightPoints.size() > 50); 
 
-    // lane center visualize
-    int lane_center_x = LaneCenter(leftPoly, rightPoly, height - 1);
+    // Get lane center using lane width compensation at the bottom
+    int lane_width_pixel_ = width / 1.5;
+    int lane_center_x = LaneCenter(leftPoly, rightPoly, height - 1, 50, 50, leftPoints.size(), rightPoints.size(), lane_width_pixel_);
+    
+    // 시각화 (디버깅용)
+    cv::Mat visFrame = frame.clone();
+    lane_visualize(visFrame, leftPoly, cv::Scalar(255, 0, 0));   // blue for left
+    lane_visualize(visFrame, rightPoly, cv::Scalar(0, 255, 0));  // green for right
     cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(0, 0, 255), -1);
 
-    // pid control & drive topic publish
-    double error = lane_center_x - (width/2);
+    // ----- Kalman Filter -----
+    /*float measurement = static_cast<float>(lane_center_x);
+    
+    if (!kf_initialized_) {
+        kf_ = cv::KalmanFilter(2, 1, 0);
+        kf_.transitionMatrix = (cv::Mat_<float>(2,2) << 1, 1, 0, 1);
+        kf_.measurementMatrix = (cv::Mat_<float>(1,2) << 1, 0);
+        setIdentity(kf_.processNoiseCov, cv::Scalar::all(1e-5));
+        setIdentity(kf_.measurementNoiseCov, cv::Scalar::all(1e-1));
+        setIdentity(kf_.errorCovPost, cv::Scalar::all(1));
+        kf_.statePost = (cv::Mat_<float>(2,1) << measurement, 0);
+        kf_initialized_ = true;
+    }
+
+    cv::Mat prediction = kf_.predict();
+    cv::Mat measurementMat = (cv::Mat_<float>(1,1) << measurement);
+    cv::Mat estimated = kf_.correct(measurementMat);
+    float filtered_lane_center = estimated.at<float>(0);
+    */// ----- End Kalman Filter -----
+
+    // PID control using filtered lane center
+    double error = static_cast<double>(lane_center_x) - (width / 2.0);
     integral_ += error;
     double derivative = error - previous_error_;
     double steering = -(Kp_ * error + Ki_ * integral_ + Kd_ * derivative);
@@ -198,8 +237,6 @@ private:
 
     // visualize
     //cv::imshow("HSV", mask);
-    //cv::imshow("Gauusianed", morph);
-    //cv::imshow("thinned", thinEdges);
     cv::imshow("Lane Tracking", visFrame);
     cv::imshow("ROI Edges", roi);
     cv::waitKey(1);
