@@ -10,11 +10,12 @@
 #include <cstdlib>
 #include <ctime>
 #include <cmath>
+#include <opencv2/video/tracking.hpp>  // Kalman filter 관련
 
 class LaneFollowerPolyNode : public rclcpp::Node {
 public:
   LaneFollowerPolyNode()
-  : Node("lane_follower_node"), previous_error_(0.0), integral_(0.0)
+  : Node("lane_follower_node"), previous_error_(0.0), integral_(0.0), kf_initialized_(false)
   {
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
@@ -40,13 +41,13 @@ public:
   }
 
 private:
-  // Polynomial fitting function
+  // 다항식 피팅 함수
   std::vector<double> polyFit(const std::vector<cv::Point>& points, int degree = 2) {
     int n = points.size();
     std::vector<double> coeff;
     if (n == 0)
       return coeff;
-
+    
     cv::Mat X(n, degree + 1, CV_64F);
     cv::Mat Y(n, 1, CV_64F);
     for (int i = 0; i < n; i++) {
@@ -64,9 +65,9 @@ private:
     return coeff;  // coeff[0]=A, coeff[1]=B, coeff[2]=C
   }
 
-  // Visualizing polynomial function
+  // 다항식 시각화 함수
   void lane_visualize(cv::Mat &img, const std::vector<double>& poly, cv::Scalar color, int height) {
-    if (poly.empty())
+    if(poly.empty())
       return;
     int degree = poly.size() - 1;
     for (int y = height * 2 / 3; y < height; y++) {
@@ -78,7 +79,7 @@ private:
     }
   }
 
-  // Calculate center of lane
+  // 차선 중앙 계산 함수
   int LaneCenter(const std::vector<double>& leftPoly, const std::vector<double>& rightPoly,
                  int y, int min_left_points, int min_right_points,
                  int left_count, int right_count, int lane_width_pixels_) {
@@ -100,28 +101,29 @@ private:
       }
     }
 
-    // If both lanes are found, average them.
+    // 양쪽 차선이 검출되면 중앙값의 평균
     if (leftFound && rightFound) {
       return static_cast<int>((left_x + right_x) / 2);
     }
-    // If only left lane is found, estimate center using lane width.
+    // 왼쪽만 검출된 경우
     else if (leftFound) {
       return static_cast<int>(left_x + lane_width_pixels_ / 2.0);
     }
-    // If only right lane is found, estimate center using lane width.
+    // 오른쪽만 검출된 경우
     else if (rightFound) {
       return static_cast<int>(right_x - lane_width_pixels_ / 2.0);
     }
-
-    // If neither lane is found, return an error value.
+    
+    // 둘 다 검출되지 않으면 기본값 반환
     return static_cast<int>(lane_width_pixels_ / 2.0);
   }
 
-  void image_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
+  void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
+  {
     cv_bridge::CvImagePtr cv_ptr;
     try {
       cv_ptr = cv_bridge::toCvCopy(msg, "bgr8");
-    } catch (cv_bridge::Exception &e) {
+    } catch(cv_bridge::Exception &e) {
       RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
       return;
     }
@@ -129,121 +131,111 @@ private:
     int height = frame.rows;
     int width = frame.cols;
 
-    // HSV filter
-    cv::Mat hsv;
-    cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
+    // HLS 변환
+    cv::Mat hls;
+    cv::cvtColor(frame, hls, cv::COLOR_BGR2HLS);
     cv::Mat mask;
+    
+    // 검은색 차선 검출을 위한 임계값 (H: 0~180, L: 0~50, S: 0~255)
+    cv::inRange(hls, cv::Scalar(0, 0, 0), cv::Scalar(180, 50, 255), mask);
+    
+    // 아래는 흰색 차선 검출을 위한 임계값 예시 (테스트 시 주석 해제 가능)
+    // cv::inRange(hls, cv::Scalar(0, 200, 0), cv::Scalar(180, 255, 255), mask);
 
-    // white line
-    // cv::inRange(hsv, cv::Scalar(0, 0, 200), cv::Scalar(180, 30, 255), mask);
-
-    // yellow line
-    // cv::inRange(hsv, cv::Scalar(20, 50, 120), cv::Scalar(70, 255, 255), mask);
-
-    // black line
-    cv::inRange(hsv, cv::Scalar(0, 0, 0), cv::Scalar(180, 255, 100), mask);
-
-    // Gaussian blur
+    // Gaussian 블러
     cv::Mat blurred;
     cv::GaussianBlur(mask, blurred, cv::Size(7, 7), 0);
 
-    // Morphology (noise)
+    // 모폴로지 연산 (잡음 제거)
     cv::Mat morph;
-    cv::erode(blurred, morph, cv::Mat(), cv::Point(-1, -1), 2);
-    cv::dilate(morph, morph, cv::Mat(), cv::Point(-1, -1), 1);
+    cv::erode(blurred, morph, cv::Mat(), cv::Point(-1,-1), 2);
+    cv::dilate(morph, morph, cv::Mat(), cv::Point(-1,-1), 1);
 
-    // Canny edge detection
+    // Canny 에지 검출
     cv::Mat edges;
     cv::Canny(morph, edges, 80, 200);
 
-    // Thinning
+    // 에지 얇게 만들기 (thinning)
     cv::Mat thinEdges;
     cv::ximgproc::thinning(edges, thinEdges, cv::ximgproc::THINNING_ZHANGSUEN);
-
-    // ROI
+    
+    // ROI 지정 (이미지 하단 1/3 영역)
     cv::Rect roi_rect(0, height * 2 / 3, width, height / 3);
     cv::Mat roi = thinEdges(roi_rect);
 
-    // Get non-zero points in ROI
+    // ROI 내의 non-zero 픽셀 좌표 추출
     std::vector<cv::Point> roiPoints;
     cv::findNonZero(roi, roiPoints);
-    for (auto &pt : roiPoints) {
+    for(auto &pt : roiPoints) {
       pt.y += height * 2 / 3;
     }
 
-    // Split points into left and right based on center
+    // 이미지 중앙 기준 좌우 분할
     std::vector<cv::Point> leftPoints, rightPoints;
-    for (const auto &pt : roiPoints) {
-      if (pt.x < width / 2)
+    for(const auto &pt : roiPoints) {
+      if(pt.x < width/2)
         leftPoints.push_back(pt);
       else
         rightPoints.push_back(pt);
     }
 
-    // Fit a polynomial
+    // 다항식 피팅
     std::vector<double> leftPoly;
     std::vector<double> rightPoly;
-
     int left_threshold = 150;
     int right_threshold = 150;
     bool leftFound = (leftPoints.size() >= left_threshold);
     bool rightFound = (rightPoints.size() >= right_threshold);
-
-    // Visualization (for debugging)
+    
+    // 시각화 (디버깅용)
     cv::Mat visFrame = frame.clone();
     int lane_count = 0;
-
+    
     if (leftFound) {
       leftPoly = polyFit(leftPoints, 1);
-      lane_visualize(visFrame, leftPoly, cv::Scalar(255, 0, 0), height);  // Blue for left
+      lane_visualize(visFrame, leftPoly, cv::Scalar(255, 0, 0), height);   // 왼쪽: 파란색
       lane_count += 1;
     }
-
+    
     if (rightFound) {
       rightPoly = polyFit(rightPoints, 1);
-      lane_visualize(visFrame, rightPoly, cv::Scalar(0, 255, 0), height);  // Green for right
+      lane_visualize(visFrame, rightPoly, cv::Scalar(0, 255, 0), height);  // 오른쪽: 초록색
       lane_count += 1;
     }
-
+    
     int lane_center_x = LaneCenter(leftPoly, rightPoly, height - 1,
                                    left_threshold, right_threshold,
                                    leftPoints.size(), rightPoints.size(), width);
-
+    
     if (lane_count == 2) {
-      cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10,
-                 cv::Scalar(0, 0, 255), -1);
-    } else if (lane_count == 1) {
-      cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10,
-                 cv::Scalar(0, 255, 0), -1);
-    } else {
-      cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10,
-                 cv::Scalar(255, 0, 0), -1);
+      cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(0, 0, 255), -1);
     }
-
-    // ----- Kalman Filter -----
-    /*
+    else if (lane_count == 1) {
+      cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(0, 255, 0), -1);
+    }
+    else {
+      cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(255, 0, 0), -1);
+    }
+    
+    // Kalman Filter 적용
     float measurement = static_cast<float>(lane_center_x);
-
     if (!kf_initialized_) {
       kf_ = cv::KalmanFilter(2, 1, 0);
-      kf_.transitionMatrix = (cv::Mat_<float>(2, 2) << 1, 1, 0, 1);
-      kf_.measurementMatrix = (cv::Mat_<float>(1, 2) << 1, 0);
-      setIdentity(kf_.processNoiseCov, cv::Scalar::all(1e-5));
-      setIdentity(kf_.measurementNoiseCov, cv::Scalar::all(1e-1));
-      setIdentity(kf_.errorCovPost, cv::Scalar::all(1));
-      kf_.statePost = (cv::Mat_<float>(2, 1) << measurement, 0);
+      kf_.transitionMatrix = (cv::Mat_<float>(2,2) << 1, 1, 0, 1);
+      kf_.measurementMatrix = (cv::Mat_<float>(1,2) << 1, 0);
+      cv::setIdentity(kf_.processNoiseCov, cv::Scalar::all(1e-5));
+      cv::setIdentity(kf_.measurementNoiseCov, cv::Scalar::all(1e-1));
+      cv::setIdentity(kf_.errorCovPost, cv::Scalar::all(1));
+      kf_.statePost = (cv::Mat_<float>(2,1) << measurement, 0);
       kf_initialized_ = true;
     }
-
     cv::Mat prediction = kf_.predict();
-    cv::Mat measurementMat = (cv::Mat_<float>(1, 1) << measurement);
+    cv::Mat measurementMat = (cv::Mat_<float>(1,1) << measurement);
     cv::Mat estimated = kf_.correct(measurementMat);
     float filtered_lane_center = estimated.at<float>(0);
-    */
-    // ----- End Kalman Filter -----
-
-    // PID control using lane center
-    double error = static_cast<double>(lane_center_x) - (width / 2.0);
+    
+    // PID 제어: Kalman 필터 보정 값을 이용
+    double error = static_cast<double>(filtered_lane_center) - (width / 2.0);
     integral_ += error;
     double derivative = error - previous_error_;
     double steering = -(Kp_ * error + Ki_ * integral_ + Kd_ * derivative);
@@ -252,49 +244,10 @@ private:
     auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
     drive_msg.header.stamp = this->now();
     drive_msg.drive.steering_angle = steering / 3;
-    steering = steering * 180 / M_PI;
-
-    //-------------------- Test Mode --------------------//
-    if (steering <= 5.0) {  // 거의 직진
-      drive_msg.drive.speed = 2.0;
-    } else if (steering <= 10.0) {  // 약간의 커브
-      drive_msg.drive.speed = 1.5;
-    } else if (steering <= 15.0) {  // 완만한 커브
-      drive_msg.drive.speed = 1.2;
-    } else {  // 중간 커브
-      drive_msg.drive.speed = 0.8;
-    }
-
-    //-------------------- Normal Mode ------------------//
-    /*
-    if (steering <= 5.0) {  // 거의 직진
-      drive_msg.drive.speed = 1.2;
-    } else if (steering <= 10.0) {  // 약간의 커브
-      drive_msg.drive.speed = 1.0;
-    } else if (steering <= 15.0) {  // 완만한 커브
-      drive_msg.drive.speed = 0.8;
-    } else {  // 중간 커브
-      drive_msg.drive.speed = 0.5;
-    }
-    */
-
-    //-------------------- Fast Mode --------------------//
-    /*
-    if (steering <= 5.0) {  // 거의 직진
-      drive_msg.drive.speed = 4.5;
-    } else if (steering <= 10.0) {  // 약간의 커브
-      drive_msg.drive.speed = 3.0;
-    } else if (steering <= 15.0) {  // 완만한 커브
-      drive_msg.drive.speed = 2.8;
-    } else {  // 중간 커브
-      drive_msg.drive.speed = 1.5;
-    }
-    */
-
+    drive_msg.drive.speed = 0.5;
     drive_pub_->publish(drive_msg);
 
-    // Visualization
-    // cv::imshow("HSV", mask);
+    // 시각화
     cv::imshow("Lane Tracking", visFrame);
     cv::imshow("ROI Edges", roi);
     cv::waitKey(1);
@@ -305,9 +258,14 @@ private:
   double Kp_, Ki_, Kd_;
   double previous_error_;
   double integral_;
+
+  // Kalman filter 변수
+  cv::KalmanFilter kf_;
+  bool kf_initialized_;
 };
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
   rclcpp::init(argc, argv);
   auto node = std::make_shared<LaneFollowerPolyNode>();
   rclcpp::spin(node);
