@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <cmath>
+#include <opencv2/video/tracking.hpp>
 
 class LaneFollowerPolyNode : public rclcpp::Node {
 public:
@@ -19,9 +20,9 @@ public:
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
     // PID parameters
-    this->declare_parameter<double>("Kp", 0.01);
-    this->declare_parameter<double>("Ki", 0.00);
-    this->declare_parameter<double>("Kd", 0.00);
+    this->declare_parameter<double>("Kp", 0.005);
+    this->declare_parameter<double>("Ki", 0.000);
+    this->declare_parameter<double>("Kd", 0.000);
     this->get_parameter("Kp", Kp_);
     this->get_parameter("Ki", Ki_);
     this->get_parameter("Kd", Kd_);
@@ -145,28 +146,28 @@ private:
     //cv::inRange(hsv, cv::Scalar(20, 50, 120), cv::Scalar(70, 255, 255), mask);
     
     // black line
-    cv::inRange(hsv, cv::Scalar(0, 0, 0), cv::Scalar(180, 20, 255), mask);
+    cv::inRange(hsv, cv::Scalar(0, 0, 0), cv::Scalar(180, 90, 255), mask);
 
     // gaussianblur
     cv::Mat blurred;
     cv::GaussianBlur(mask, blurred, cv::Size(7, 7), 0);
 
     // morphology (noise)
-    cv::Mat morph;
-    cv::erode(blurred, morph, cv::Mat(), cv::Point(-1,-1), 2);
-    cv::dilate(morph, morph, cv::Mat(), cv::Point(-1,-1), 1);
+    //cv::Mat morph;
+    //cv::erode(blurred, morph, cv::Mat(), cv::Point(-1,-1), 2);
+    //cv::dilate(morph, morph, cv::Mat(), cv::Point(-1,-1), 1);
 
     // Canny edge
-    cv::Mat edges;
-    cv::Canny(morph, edges, 80, 200);
+    //cv::Mat edges;
+    //cv::Canny(morph, edges, 80, 200);
 
     // Thinning
-    cv::Mat thinEdges;
-    cv::ximgproc::thinning(edges, thinEdges, cv::ximgproc::THINNING_ZHANGSUEN);
+    //cv::Mat thinEdges;
+    //cv::ximgproc::thinning(edges, thinEdges, cv::ximgproc::THINNING_ZHANGSUEN);
     
      //ROI
     cv::Rect roi_rect(0, height * 2 / 3, width, height / 3);
-    cv::Mat roi = thinEdges(roi_rect);
+    cv::Mat roi = blurred(roi_rect);
 
     // Get non-zero points in ROI
     std::vector<cv::Point> roiPoints;
@@ -189,8 +190,8 @@ private:
     std::vector<double> rightPoly;
     // Get lane center using lane width compensation at the bottom
     
-    int left_threshold = 150;
-    int right_threshold = 150;
+    int left_threshold = 1000;
+    int right_threshold = 1000;
     bool leftFound = (leftPoints.size() >= left_threshold);
     bool rightFound = (rightPoints.size() >= right_threshold);
     
@@ -214,6 +215,7 @@ private:
     
     int lane_center_x = LaneCenter(leftPoly, rightPoly, height - 1, left_threshold, right_threshold, leftPoints.size(), rightPoints.size(), width);
     
+    
     if (lane_count == 2) {
       cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(0, 0, 255), -1);
     }
@@ -225,36 +227,33 @@ private:
     }
     
 
-    // ----- Kalman Filter -----
-    /*float measurement = static_cast<float>(lane_center_x);
-    
-    if (!kf_initialized_) {
-        kf_ = cv::KalmanFilter(2, 1, 0);
-        kf_.transitionMatrix = (cv::Mat_<float>(2,2) << 1, 1, 0, 1);
-        kf_.measurementMatrix = (cv::Mat_<float>(1,2) << 1, 0);
-        setIdentity(kf_.processNoiseCov, cv::Scalar::all(1e-5));
-        setIdentity(kf_.measurementNoiseCov, cv::Scalar::all(1e-1));
-        setIdentity(kf_.errorCovPost, cv::Scalar::all(1));
-        kf_.statePost = (cv::Mat_<float>(2,1) << measurement, 0);
-        kf_initialized_ = true;
-    }
-
-    cv::Mat prediction = kf_.predict();
-    cv::Mat measurementMat = (cv::Mat_<float>(1,1) << measurement);
-    cv::Mat estimated = kf_.correct(measurementMat);
-    float filtered_lane_center = estimated.at<float>(0);
-    */// ----- End Kalman Filter -----
-
     // PID control using filtered lane center
     double error = static_cast<double>(lane_center_x) - (width / 2.0);
     integral_ += error;
     double derivative = error - previous_error_;
     double steering = -(Kp_ * error + Ki_ * integral_ + Kd_ * derivative) / 3;
     previous_error_ = error;
+    
+    double steering_degree = steering * (180.0 / M_PI);
+    double drive_speed = 0.0;
+
+    //-------------------- Test Mode -----------------//
+    if (fabs(steering_degree) <= 5.0) { 
+        drive_speed = 1.5;
+    } else if (fabs(steering_degree) <= 8.0) {
+        drive_speed = 1.2;
+    } else if (fabs(steering_degree) <= 11.5) {
+        drive_speed = 1.0;
+    } else if (fabs(steering_degree) <= 15.0) {
+        drive_speed = 0.8;
+    } else {
+        drive_speed = 0.7;
+    }
 
     auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
     drive_msg.header.stamp = this->now();
     drive_msg.drive.steering_angle = steering;
+    drive_msg.drive.speed = drive_speed;
     drive_pub_->publish(drive_msg);
 
     // visualize
@@ -262,6 +261,8 @@ private:
     cv::imshow("Lane Tracking", visFrame);
     cv::imshow("ROI Edges", roi);
     cv::waitKey(1);
+    
+
   }
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
