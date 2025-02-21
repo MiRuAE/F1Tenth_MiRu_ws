@@ -241,10 +241,50 @@ private:
     double steering = -(Kp_ * error + Ki_ * integral_ + Kd_ * derivative);
     previous_error_ = error;
 
+    // steering 값은 현재 radian으로 되어있으므로, 이를 degree로 변환하고 속도 모드에 따라 drive_speed를 결정
+    double steering_angle_radian = steering / 3;
+    double steering_degree = steering_angle_radian * (180.0 / M_PI);
+    double drive_speed = 0.5; // 기본 속도
+
+    //-------------------- Test Mode -----------------//
+    if (fabs(steering_degree) <= 5.0) {  // 거의 직진
+        drive_speed = 2.0;
+    } else if (fabs(steering_degree) <= 10.0) {  // 약간의 커브
+        drive_speed = 1.5;
+    } else if (fabs(steering_degree) <= 15.0) {  // 완만한 커브
+        drive_speed = 1.2;
+    } else {  // 중간 커브
+        drive_speed = 0.8;
+    }
+    //-------------------- Normal Mode -----------------//
+    /*
+    if (fabs(steering_degree) <= 5.0) {  // 거의 직진
+        drive_speed = 1.2;
+    } else if (fabs(steering_degree) <= 10.0) {  // 약간의 커브
+        drive_speed = 1.0;
+    } else if (fabs(steering_degree) <= 15.0) {  // 완만한 커브
+        drive_speed = 0.8;
+    } else {  // 중간 커브
+        drive_speed = 0.5;
+    }
+    */
+    //-------------------- Fast Mode -------------------//
+    /*
+    if (fabs(steering_degree) <= 5.0) {  // 거의 직진
+        drive_speed = 4.5;
+    } else if (fabs(steering_degree) <= 10.0) {  // 약간의 커브
+        drive_speed = 3.0;
+    } else if (fabs(steering_degree) <= 15.0) {  // 완만한 커브
+        drive_speed = 2.8;
+    } else {  // 중간 커브
+        drive_speed = 1.5;
+    }
+    */
+
     auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
     drive_msg.header.stamp = this->now();
-    drive_msg.drive.steering_angle = steering / 3;
-    drive_msg.drive.speed = 0.5;
+    drive_msg.drive.steering_angle = steering_angle_radian;
+    drive_msg.drive.speed = drive_speed;
     drive_pub_->publish(drive_msg);
 
     // 시각화
