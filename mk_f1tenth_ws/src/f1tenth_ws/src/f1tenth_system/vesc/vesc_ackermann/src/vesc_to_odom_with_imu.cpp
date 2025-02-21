@@ -78,7 +78,7 @@ void VescToOdomWithIMU::vescStateCallback(const VescStateStamped::SharedPtr stat
 
 void VescToOdomWithIMU::imuCallback(const VescImuStamped::SharedPtr imu)
 {
-  imu_yaw_rate_ = imu->angular_velocity.z;  // IMU yaw rate in rad/s
+  imu_yaw_rate_ = imu->imu.angular_velocity.z;  // IMU yaw rate in rad/s
 }
 
 void VescToOdomWithIMU::servoCmdCallback(const Float64::SharedPtr servo)
@@ -107,7 +107,7 @@ void VescToOdomWithIMU::publishOdometry(const rclcpp::Time & timestamp, double s
   //   odom_pub_->publish(odom);
   // }
 
-  auto odom_msg = vesc_ackermann::msg::MyOdometry();
+  auto odom_msg = vesc_msgs::msg::MyOdom();
   
   odom_msg.header.stamp = timestamp;
   odom_msg.header.frame_id = odom_frame_;

@@ -5,7 +5,7 @@
 #define VESC_ACKERMANN__VESC_TO_ODOM_WITH_IMU_HPP_
 
 // #include <nav_msgs/msg/odometry.hpp>
-#include <vesc_msgs/msg/MyOdom.hpp>
+#include <vesc_msgs/msg/my_odom.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/float64.hpp>
 // #include <sensor_msgs/msg/imu.hpp>
@@ -34,7 +34,7 @@ public:
 private:
   // Callback functions
   void vescStateCallback(const VescStateStamped::SharedPtr state);
-  void imuCallback(const Imu::SharedPtr imu);
+  void imuCallback(const VescImuStamped::SharedPtr imu);
   void servoCmdCallback(const Float64::SharedPtr servo);
   void publishOdometry(const rclcpp::Time & timestamp, double speed, double angular_velocity);
 
@@ -65,7 +65,7 @@ private:
   rclcpp::Publisher<MyOdom>::SharedPtr odom_pub_;
   rclcpp::Subscription<VescStateStamped>::SharedPtr vesc_state_sub_;
   rclcpp::Subscription<Float64>::SharedPtr servo_sub_;
-  rclcpp::Subscription<Imu>::SharedPtr imu_sub_;
+  rclcpp::Subscription<VescImuStamped>::SharedPtr imu_sub_;
 
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_pub_;
 };
