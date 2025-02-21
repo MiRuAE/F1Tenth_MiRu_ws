@@ -109,11 +109,11 @@ private:
     }
     // If only left lane is found, estimate center using lane width.
     else if (leftFound) {
-        return static_cast<int>(left_x + lane_width_pixels_ / 2.0);
+        return static_cast<int>(left_x + lane_width_pixels_ / 2.2);
     }
     // If only right lane is found, estimate center using lane width.
     else if (rightFound) {
-        return static_cast<int>(right_x - lane_width_pixels_ / 2.0);
+        return static_cast<int>(right_x - lane_width_pixels_ / 2.2);
     }
     
     // If neither lane is found, return an error value.
@@ -135,7 +135,7 @@ private:
 
     // HSV filter
     cv::Mat hsv;
-    cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
+    cv::cvtColor(frame, hsv, cv::COLOR_BGR2HLS);
     cv::Mat mask;
     
     // white line
@@ -145,7 +145,7 @@ private:
     //cv::inRange(hsv, cv::Scalar(20, 50, 120), cv::Scalar(70, 255, 255), mask);
     
     // black line
-    cv::inRange(hsv, cv::Scalar(0, 0, 0), cv::Scalar(180, 255, 100), mask);
+    cv::inRange(hsv, cv::Scalar(0, 0, 0), cv::Scalar(180, 20, 255), mask);
 
     // gaussianblur
     cv::Mat blurred;
@@ -249,13 +249,12 @@ private:
     double error = static_cast<double>(lane_center_x) - (width / 2.0);
     integral_ += error;
     double derivative = error - previous_error_;
-    double steering = -(Kp_ * error + Ki_ * integral_ + Kd_ * derivative);
+    double steering = -(Kp_ * error + Ki_ * integral_ + Kd_ * derivative) / 3;
     previous_error_ = error;
 
     auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
     drive_msg.header.stamp = this->now();
-    drive_msg.drive.steering_angle = steering / 3;
-    drive_msg.drive.speed = 0.5;
+    drive_msg.drive.steering_angle = steering;
     drive_pub_->publish(drive_msg);
 
     // visualize
