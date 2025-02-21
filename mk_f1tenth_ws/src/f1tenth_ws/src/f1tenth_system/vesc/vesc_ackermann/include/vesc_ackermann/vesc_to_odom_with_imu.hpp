@@ -4,10 +4,12 @@
 #ifndef VESC_ACKERMANN__VESC_TO_ODOM_WITH_IMU_HPP_
 #define VESC_ACKERMANN__VESC_TO_ODOM_WITH_IMU_HPP_
 
-#include <nav_msgs/msg/odometry.hpp>
+// #include <nav_msgs/msg/odometry.hpp>
+#include <vesc_msgs/msg/MyOdom.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/float64.hpp>
-#include <sensor_msgs/msg/imu.hpp>
+// #include <sensor_msgs/msg/imu.hpp>
+#include <vesc_msgs/msg/vesc_imu_stamped.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 #include <vesc_msgs/msg/vesc_state_stamped.hpp>
 
@@ -17,9 +19,11 @@
 namespace vesc_ackermann
 {
 
-using nav_msgs::msg::Odometry;
+// using nav_msgs::msg::Odometry;
+using vesc_msgs::msg::MyOdom;
 using std_msgs::msg::Float64;
-using sensor_msgs::msg::Imu;
+// using sensor_msgs::msg::Imu;
+using vesc_msgs::msg::VescImuStamped;
 using vesc_msgs::msg::VescStateStamped;
 
 class VescToOdomWithIMU : public rclcpp::Node
@@ -58,7 +62,7 @@ private:
   Float64::SharedPtr last_servo_cmd_;
 
   // ROS publishers and subscribers
-  rclcpp::Publisher<Odometry>::SharedPtr odom_pub_;
+  rclcpp::Publisher<MyOdom>::SharedPtr odom_pub_;
   rclcpp::Subscription<VescStateStamped>::SharedPtr vesc_state_sub_;
   rclcpp::Subscription<Float64>::SharedPtr servo_sub_;
   rclcpp::Subscription<Imu>::SharedPtr imu_sub_;

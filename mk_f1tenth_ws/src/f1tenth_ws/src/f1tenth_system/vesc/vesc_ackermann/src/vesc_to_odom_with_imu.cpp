@@ -10,8 +10,11 @@ namespace vesc_ackermann
 {
 
 using geometry_msgs::msg::TransformStamped;
-using nav_msgs::msg::Odometry;
-using sensor_msgs::msg::Imu;
+// using nav_msgs::msg::Odometry;
+using vesc_msgs::msg::MyOdom;
+
+// using sensor_msgs::msg::Imu;
+using vesc_msgs::msg::VescImuStamped;
 using std::placeholders::_1;
 using std_msgs::msg::Float64;
 using vesc_msgs::msg::VescStateStamped;
@@ -32,11 +35,11 @@ VescToOdomWithIMU::VescToOdomWithIMU(const rclcpp::NodeOptions & options)
   steering_to_servo_gain_ = declare_parameter("steering_angle_to_servo_gain", 0.0);
 
   // Publishers and Subscribers
-  odom_pub_ = create_publisher<Odometry>("odom", 10);
+  odom_pub_ = create_publisher<MyOdom>("odom", 10);
   vesc_state_sub_ = create_subscription<VescStateStamped>(
     "sensors/core", 10, std::bind(&VescToOdomWithIMU::vescStateCallback, this, _1));
-  imu_sub_ = create_subscription<Imu>(
-    "imu/data", 10, std::bind(&VescToOdomWithIMU::imuCallback, this, _1));
+  imu_sub_ = create_subscription<VescImuStamped>(
+    "sensors/imu", 10, std::bind(&VescToOdomWithIMU::imuCallback, this, _1));
   if (use_servo_cmd_) {
     servo_sub_ = create_subscription<Float64>(
       "sensors/servo_position_command", 10, std::bind(&VescToOdomWithIMU::servoCmdCallback, this, _1));
@@ -73,7 +76,7 @@ void VescToOdomWithIMU::vescStateCallback(const VescStateStamped::SharedPtr stat
   publishOdometry(state->header.stamp, current_speed, current_angular_velocity);
 }
 
-void VescToOdomWithIMU::imuCallback(const Imu::SharedPtr imu)
+void VescToOdomWithIMU::imuCallback(const VescImuStamped::SharedPtr imu)
 {
   imu_yaw_rate_ = imu->angular_velocity.z;  // IMU yaw rate in rad/s
 }
@@ -85,24 +88,37 @@ void VescToOdomWithIMU::servoCmdCallback(const Float64::SharedPtr servo)
 
 void VescToOdomWithIMU::publishOdometry(const rclcpp::Time & timestamp, double speed, double angular_velocity)
 {
-  Odometry odom;
-  odom.header.frame_id = odom_frame_;
-  odom.header.stamp = timestamp;
-  odom.child_frame_id = base_frame_;
+  // Odometry odom;
+  // odom.header.frame_id = odom_frame_;
+  // odom.header.stamp = timestamp;
+  // odom.child_frame_id = base_frame_;
 
-  // Set position and orientation
-  odom.pose.pose.position.x = x_;
-  odom.pose.pose.position.y = y_;
-  odom.pose.pose.orientation.z = sin(yaw_ / 2.0);
-  odom.pose.pose.orientation.w = cos(yaw_ / 2.0);
+  // // Set position and orientation
+  // odom.pose.pose.position.x = x_;
+  // odom.pose.pose.position.y = y_;
+  // odom.pose.pose.orientation.z = sin(yaw_ / 2.0);
+  // odom.pose.pose.orientation.w = cos(yaw_ / 2.0);
 
-  // Set velocity (linear and angular)
-  odom.twist.twist.linear.x = speed;
-  odom.twist.twist.angular.z = angular_velocity;
+  // // Set velocity (linear and angular)
+  // odom.twist.twist.linear.x = speed;
+  // odom.twist.twist.angular.z = angular_velocity;
 
-  if (rclcpp::ok()) {
-    odom_pub_->publish(odom);
-  }
+  // if (rclcpp::ok()) {
+  //   odom_pub_->publish(odom);
+  // }
+
+  auto odom_msg = vesc_ackermann::msg::MyOdometry();
+  
+  odom_msg.header.stamp = timestamp;
+  odom_msg.header.frame_id = odom_frame_;
+  
+  odom_msg.x = x_;
+  odom_msg.y = y_;
+  odom_msg.yaw = yaw_;
+  odom_msg.linear_velocity = speed;
+  odom_msg.angular_velocity = angular_velocity;
+  
+  odom_pub_->publish(odom_msg);
 }
 
 double VescToOdomWithIMU::complementaryFilter(double previous_yaw, double imu_rate, double dt)
