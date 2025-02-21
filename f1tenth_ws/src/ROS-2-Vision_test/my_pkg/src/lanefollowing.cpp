@@ -68,11 +68,11 @@ private:
 
 
   // visualizing poly function
-  void lane_visualize(cv::Mat &img, const std::vector<double>& poly, cv::Scalar color) {
+  void lane_visualize(cv::Mat &img, const std::vector<double>& poly, cv::Scalar color, int height) {
   
     if(poly.empty()) return;
     int degree = poly.size() - 1;
-    for (int y = img.rows/2; y < img.rows; y++) {
+    for (int y = height*2/3; y < height; y++) {
       double x = 0;
       for (int j = 0; j < poly.size(); j++) {
         x += poly[j] * std::pow(y, degree - j);
@@ -117,7 +117,7 @@ private:
     }
     
     // If neither lane is found, return an error value.
-    return -1;
+    return static_cast<int>(lane_width_pixels_ / 2.0);
   }
 
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
@@ -172,7 +172,7 @@ private:
     std::vector<cv::Point> roiPoints;
     cv::findNonZero(roi, roiPoints);
     for(auto &pt : roiPoints) {
-        pt.y += height/2;
+        pt.y += height*2/3;
     }
 
     // Split points into left and right based on center
@@ -185,21 +185,45 @@ private:
     }
 
     // Fit a polynomial
-    std::vector<double> leftPoly = polyFit(leftPoints, 1);
-    std::vector<double> rightPoly = polyFit(rightPoints, 1);
-
+    std::vector<double> leftPoly;
+    std::vector<double> rightPoly;
     // Get lane center using lane width compensation at the bottom
     
-    int left_threshold = 200;
-    int right_threshold = 200;
-    int lane_width_pixel_ = width;
-    int lane_center_x = LaneCenter(leftPoly, rightPoly, height - 1, left_threshold, right_threshold, leftPoints.size(), rightPoints.size(), lane_width_pixel_);
+    int left_threshold = 150;
+    int right_threshold = 150;
+    bool leftFound = (leftPoints.size() >= left_threshold);
+    bool rightFound = (rightPoints.size() >= right_threshold);
     
     // 시각화 (디버깅용)
     cv::Mat visFrame = frame.clone();
-    lane_visualize(visFrame, leftPoly, cv::Scalar(255, 0, 0));   // blue for left
-    lane_visualize(visFrame, rightPoly, cv::Scalar(0, 255, 0));  // green for right
-    cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(0, 0, 255), -1);
+    
+    int lane_count = 0;
+    
+    if (leftFound) {
+      leftPoly = polyFit(leftPoints, 1);
+      lane_visualize(visFrame, leftPoly, cv::Scalar(255, 0, 0), height);   // blue for left
+      lane_count += 1;
+    }
+    
+    if (rightFound) {
+      rightPoly = polyFit(rightPoints, 1);
+      lane_visualize(visFrame, rightPoly, cv::Scalar(0, 255, 0), height);  // green for right
+      lane_count += 1;
+    }
+    
+    
+    int lane_center_x = LaneCenter(leftPoly, rightPoly, height - 1, left_threshold, right_threshold, leftPoints.size(), rightPoints.size(), width);
+    
+    if (lane_count == 2) {
+      cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(0, 0, 255), -1);
+    }
+    else if (lane_count == 1) {
+      cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(0, 255, 0), -1);
+    }
+    else {
+      cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(255, 0, 0), -1);
+    }
+    
 
     // ----- Kalman Filter -----
     /*float measurement = static_cast<float>(lane_center_x);
@@ -231,7 +255,7 @@ private:
     auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
     drive_msg.header.stamp = this->now();
     drive_msg.drive.steering_angle = steering / 3;
-    drive_msg.drive.speed = 0.7;
+    drive_msg.drive.speed = 0.5;
     drive_pub_->publish(drive_msg);
 
     // visualize
