@@ -5,10 +5,12 @@ import numpy as np
 # Parameter settings
 camera_index = 2
 lower_bound = np.array([0, 0, 0])
-upper_bound = np.array([180, 255, 100])
+upper_bound = np.array([180, 20, 255])
 
 
 cap = cv2.VideoCapture(camera_index)
+
+cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
 
 if not cap.isOpened():
     print("wrong index")
@@ -21,8 +23,8 @@ while True:
         break
 
    
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(hsv, lower_bound, upper_bound)
+    hls = cv2.cvtColor(frame, cv2.COLOR_BGR2HLS)
+    mask = cv2.inRange(hls, lower_bound, upper_bound)
     # visualize
     cv2.imshow('Original', frame)
     cv2.imshow('Mask', mask)
@@ -32,4 +34,3 @@ while True:
 
 cap.release()
 cv2.destroyAllWindows()
-
