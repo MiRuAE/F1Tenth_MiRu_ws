@@ -47,15 +47,15 @@ bridge:
     # map_path: '/home/jsyun/Programming/f1sim_ws/src/f1tenth_gym_ros/maps/levine_obs' # Ubuntu_env
     # map_path: '/home/jsyun/Programming/f1sim_ws/src/f1tenth_gym_ros/maps/Spielberg_map' # Ubuntu_env
     # map_path: '/js_ws/f1sim_ws/src/f1tenth_gym_ros/maps/levine' # Docker_env
-    map_path: '/ros2_humble/F1Tenth_MiRu_ws/mk_f1sim_ws/src/f1tenth_gym_ros/maps/levine_obs'
+    map_path: '/ros2_humble/F1Tenth_MiRu_ws/mk_f1tenth_ws/f1sim_ws/src/f1tenth_gym_ros/maps/levine'
     map_img_ext: '.png'
 
     # opponent parameters
     num_agent: 1
 
     # ego starting pose on map
-    sx: -2.0
-    sy: 0.0
+    sx: -2.0 
+    sy: 3.0  #0.0
     stheta: 0.0
 
     # opp starting pose on map
