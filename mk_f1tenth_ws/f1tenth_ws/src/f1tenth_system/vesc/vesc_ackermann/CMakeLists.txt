@@ -11,6 +11,7 @@ elseif("${CMAKE_CXX_STANDARD_COMPUTED_DEFAULT}" STREQUAL "98")
 endif()
 
 find_package(ament_cmake_auto REQUIRED)
+find_package(Eigen3 REQUIRED)
 ament_auto_find_build_dependencies()
 
 ###########
@@ -22,6 +23,7 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   src/ackermann_to_vesc.cpp
   src/vesc_to_odom.cpp
   src/vesc_to_odom_with_imu.cpp
+  src/vesc_to_odom_with_ekf.cpp
 )
 
 # register nodes as components
@@ -36,6 +38,10 @@ rclcpp_components_register_node(${PROJECT_NAME}
 rclcpp_components_register_node(${PROJECT_NAME}
   PLUGIN vesc_ackermann::VescToOdomWithIMU
   EXECUTABLE vesc_to_odom_with_imu_node
+)
+rclcpp_components_register_node(${PROJECT_NAME}
+  PLUGIN vesc_ackermann::VescToOdomWithEKF
+  EXECUTABLE vesc_to_odom_with_ekf_node
 )
 
 #############

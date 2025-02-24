@@ -9,4 +9,4 @@ float64 yaw     # degree
 
 # 선형 및 각속도 정보
 float64 linear_velocity
-float64 angular_velocity    # rad/s
+float64 angular_velocity    # degree/s

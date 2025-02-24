@@ -95,10 +95,16 @@ def generate_launch_description():
     #     name='vesc_to_odom_node',
     #     parameters=[LaunchConfiguration('vesc_config')]
     # )
+    # vesc_to_odom_node = Node(
+    #     package='vesc_ackermann',
+    #     executable='vesc_to_odom_with_imu_node',
+    #     name='vesc_to_odom_with_imu_node',
+    #     parameters=[LaunchConfiguration('vesc_config')]
+    # )
     vesc_to_odom_node = Node(
         package='vesc_ackermann',
-        executable='vesc_to_odom_with_imu_node',
-        name='vesc_to_odom_with_imu_node',
+        executable='vesc_to_odom_with_ekf_node',
+        name='vesc_to_odom_with_ekf_node',
         parameters=[LaunchConfiguration('vesc_config')]
     )
     vesc_driver_node = Node(
