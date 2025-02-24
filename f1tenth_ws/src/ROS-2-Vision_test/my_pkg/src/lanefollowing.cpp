@@ -299,4 +299,15 @@ private:
   double integral_;
 
   // Kalman filter variables
-  cv::Kalman
+  cv::KalmanFilter kf_;
+  bool kf_initialized_;
+};
+
+int main(int argc, char **argv)
+{
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared<LaneFollowerPolyNode>();
+  rclcpp::spin(node);
+  rclcpp::shutdown();
+  return 0;
+}
