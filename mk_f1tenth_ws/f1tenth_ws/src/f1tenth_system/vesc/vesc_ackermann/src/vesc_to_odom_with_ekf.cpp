@@ -131,8 +131,8 @@ private:
     // Get predicted state from EKF
     Eigen::Vector3d state_est = ekf_.getState();
     x_ = state_est(0);
-    y_ = state_est(1);
-    double theta_est = state_est(2); // radian
+    y_ = -state_est(1);
+    double theta_est = -state_est(2); // radian
 
     double theta_est_deg = theta_est * 180 / M_PI;
     
@@ -141,10 +141,10 @@ private:
     odom_msg.header.stamp = state->header.stamp;
     odom_msg.header.frame_id = odom_frame_;
     odom_msg.x = x_;
-    odom_msg.y = y_;
-    odom_msg.yaw = theta_est_deg;
+    odom_msg.y = -y_;
+    odom_msg.yaw = -theta_est_deg;
     odom_msg.linear_velocity = current_speed;
-    odom_msg.angular_velocity = w_control;
+    odom_msg.angular_velocity = -w_control;
     
     odom_pub_->publish(odom_msg);
   }
@@ -153,7 +153,7 @@ private:
   void imuCallback(const vesc_msgs::msg::VescImuStamped::SharedPtr imu) {
     // IMU 메시지에 이미 yaw 값이 degree 단위로 포함되어 있다고 가정합니다.
     // 예: imu->yaw 필드가 degree 단위의 yaw 값을 제공합니다.
-    double measured_yaw_deg = imu->imu.ypr.z; 
+    double measured_yaw_deg = -imu->imu.ypr.z; 
     // EKF 내부는 radian 단위를 사용하므로 변환
     double measured_yaw_rad = measured_yaw_deg * M_PI / 180.0;
     

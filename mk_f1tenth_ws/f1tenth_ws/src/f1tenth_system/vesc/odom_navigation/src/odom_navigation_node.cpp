@@ -27,7 +27,7 @@ public:
     this->declare_parameter<double>("target_x", 0.0);
     this->declare_parameter<double>("target_y", 0.0);
     // 나머지 파라미터는 기존과 동일하게 선언
-    this->declare_parameter<double>("goal_tolerance", 0.1);
+    this->declare_parameter<double>("goal_tolerance", 0.05);
     this->declare_parameter<double>("max_speed", 1.0);
     this->declare_parameter<double>("kp_speed", 0.5);
     this->declare_parameter<double>("kp_steering", 1.0);
