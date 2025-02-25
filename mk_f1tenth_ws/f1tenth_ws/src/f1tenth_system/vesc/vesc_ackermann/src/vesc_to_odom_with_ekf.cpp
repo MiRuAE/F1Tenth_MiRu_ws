@@ -88,6 +88,7 @@ public:
     speed_to_erpm_offset_ = declare_parameter("speed_to_erpm_offset", 0.0);
     wheelbase_ = declare_parameter("wheelbase", 0.0);
     steering_to_servo_gain_ = declare_parameter("steering_angle_to_servo_gain", 0.0);
+    steering_to_servo_offset_ = declare_parameter("steering_angle_to_servo_offset", 0.0);
     
     // Declare and use parameter to decide if servo command should be used
     use_servo_cmd_ = declare_parameter("use_servo_cmd_to_calc_angular_velocity", true);
@@ -110,14 +111,14 @@ public:
 private:
   // Vesc state callback: Use VESC state (and servo command if available) to drive the EKF prediction
   void vescStateCallback(const vesc_msgs::msg::VescStateStamped::SharedPtr state) {
-    double current_speed = (-state->state.speed - speed_to_erpm_offset_) / speed_to_erpm_gain_;
+    double current_speed = (state->state.speed - speed_to_erpm_offset_) / speed_to_erpm_gain_;
     if (std::fabs(current_speed) < 0.05)
       current_speed = 0.0;
     
     double current_steering_angle = 0.0;
     if (use_servo_cmd_ && last_servo_cmd_ != nullptr) {
       // Convert servo command to steering angle
-      current_steering_angle = last_servo_cmd_->data / steering_to_servo_gain_;
+      current_steering_angle = (last_servo_cmd_->data - steering_to_servo_offset_) / steering_to_servo_gain_;
     }
     double w_control = current_speed * tan(current_steering_angle) / wheelbase_;
     
@@ -131,8 +132,8 @@ private:
     // Get predicted state from EKF
     Eigen::Vector3d state_est = ekf_.getState();
     x_ = state_est(0);
-    y_ = -state_est(1);
-    double theta_est = -state_est(2); // radian
+    y_ = state_est(1);
+    double theta_est = state_est(2); // radian
 
     double theta_est_deg = theta_est * 180 / M_PI;
     
@@ -141,10 +142,10 @@ private:
     odom_msg.header.stamp = state->header.stamp;
     odom_msg.header.frame_id = odom_frame_;
     odom_msg.x = x_;
-    odom_msg.y = -y_;
-    odom_msg.yaw = -theta_est_deg;
+    odom_msg.y = y_;
+    odom_msg.yaw = theta_est_deg;
     odom_msg.linear_velocity = current_speed;
-    odom_msg.angular_velocity = -w_control;
+    odom_msg.angular_velocity = w_control;
     
     odom_pub_->publish(odom_msg);
   }
@@ -181,6 +182,7 @@ private:
   double speed_to_erpm_offset_;
   double wheelbase_;
   double steering_to_servo_gain_;
+  double steering_to_servo_offset_;
   
   bool use_servo_cmd_;
   std::shared_ptr<std_msgs::msg::Float64> last_servo_cmd_;
