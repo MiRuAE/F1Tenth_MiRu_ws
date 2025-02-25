@@ -19,7 +19,7 @@ class OdomNavigationNode : public rclcpp::Node
 public:
   OdomNavigationNode()
   : Node("odom_navigation_node"),
-    target_set_(false),
+    target_set_(false), target_not_set_logged_(false),
     goal_reached_(false)  // 초기에는 목표에 도달하지 않음
   {
     // 목표 좌표에 대한 기본값은 설정하지 않음.
@@ -28,7 +28,8 @@ public:
     this->declare_parameter<double>("target_y", 0.0);
     // 나머지 파라미터는 기존과 동일하게 선언
     this->declare_parameter<double>("goal_tolerance", 0.05);
-    this->declare_parameter<double>("max_speed", 1.0);
+    this->declare_parameter<double>("max_speed", 1.5);
+    this->declare_parameter<double>("min_speed", 0.5);
     this->declare_parameter<double>("kp_speed", 0.5);
     this->declare_parameter<double>("kp_steering", 1.0);
     // this->declare_parameter<double>("max_steer_angle", 0.34);
@@ -43,6 +44,7 @@ public:
     target_y_ = this->get_parameter("target_y").as_double();
     goal_tolerance_ = this->get_parameter("goal_tolerance").as_double();
     max_speed_ = this->get_parameter("max_speed").as_double();
+    min_speed_ = this->get_parameter("min_speed").as_double();
     kp_speed_ = this->get_parameter("kp_speed").as_double();
     kp_steering_ = this->get_parameter("kp_steering").as_double();
     // max_steer_angle_ = this->get_parameter("max_steer_angle").as_double();
@@ -84,8 +86,13 @@ private:
   {
     std::lock_guard<std::mutex> lock(target_mutex_);
     if (!target_set_) {
-      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Target not set. Waiting for user input...");
+      if (!target_not_set_logged_) {
+        RCLCPP_INFO(this->get_logger(), "Target not set. Waiting for user input...");
+        target_not_set_logged_ = true; // 한 번만 출력되도록 설정
+      }
       return;
+    } else {
+      target_not_set_logged_ = false; // 목표가 설정되면 다시 로그 출력 가능하도록 초기화
     }
 
     // // 현재 위치
@@ -133,8 +140,11 @@ private:
 
     // 간단한 P 제어를 이용한 속도 계산
     double speed_cmd = kp_speed_ * distance;
+    // 최소/최대 속도 제한 적용
     if (speed_cmd > max_speed_) {
       speed_cmd = max_speed_;
+    } else if (speed_cmd < min_speed_) {
+      speed_cmd = min_speed_;  // 최소 속도 제한
     }
 
     // 간단한 P 제어를 이용한 조향각 계산
@@ -204,9 +214,11 @@ private:
   double target_x_;
   double target_y_;
   bool target_set_;
+  bool target_not_set_logged_;
   bool goal_reached_;  // 목표에 도달했는지 여부를 저장하는 플래그
   double goal_tolerance_;
   double max_speed_;
+  double min_speed_;
   double kp_speed_;
   double kp_steering_;
   double max_steer_angle_;
