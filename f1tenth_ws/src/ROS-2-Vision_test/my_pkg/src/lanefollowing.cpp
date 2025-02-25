@@ -51,9 +51,14 @@ private:
     // cv::equalizeHist(gray, equalized);
 
     // [4] Thresholding (Using Adaptive Threshold in this example)
+    
+    // cv::Mat binary;
+    // double thresh = 100;
+    // cv::threshold(gray, binary, thresh, 255, cv::THRESH_BINARY);
+    
     cv::Mat binary;
-    int blockSize = 5; // Must be an odd number
-    int C = 20;        // Constant subtracted from the mean
+    int blockSize = 9; // Must be an odd number
+    int C = 25;        // Constant subtracted from the mean
     cv::adaptiveThreshold(gray, binary, 255, cv::ADAPTIVE_THRESH_MEAN_C,
                           cv::THRESH_BINARY, blockSize, C);
 
@@ -214,7 +219,7 @@ private:
     int image_center = width / 2;
     int error = lane_center_x - image_center;
     double Kp = 0.005;
-    double steering_angle = -Kp * error; // negative sign for correction
+    double steering_angle = -Kp * error / 2; // negative sign for correction
     double drive_speed = 1.0;
 
     // Publish steering commands
@@ -236,4 +241,4 @@ int main(int argc, char **argv) {
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
-}
+  }
