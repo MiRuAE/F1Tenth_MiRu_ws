@@ -172,10 +172,10 @@ private:
       lane_center_x = (left_pt1.x + right_pt1.x) / 2;
     } else if (!left_lines.empty()) {
       // If only left line, assume the lane extends to the right edge
-      lane_center_x = left_pt1.x + (width - left_pt1.x) / 2;
+      lane_center_x = left_pt1.x + width / 2;
     } else if (!right_lines.empty()) {
       // If only right line, assume the lane extends from the left edge
-      lane_center_x = right_pt1.x / 2;
+      lane_center_x = right_pt1.x - width / 2;
     }
 
     // [12] Visualization: draw lines on the original image (with ROI offset)
