@@ -210,6 +210,7 @@ private:
   double kp_speed_;
   double kp_steering_;
   double max_steer_angle_;
+  double min_steer_angle_;
 
   std::thread input_thread_;
   std::mutex target_mutex_;

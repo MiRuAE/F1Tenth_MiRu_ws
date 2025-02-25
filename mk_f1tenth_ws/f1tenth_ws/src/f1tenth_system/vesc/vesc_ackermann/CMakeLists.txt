@@ -26,6 +26,14 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   src/vesc_to_odom_with_ekf.cpp
 )
 
+# 이제 타겟이 생성되었으므로 include 디렉토리를 지정합니다.
+target_include_directories(${PROJECT_NAME}
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+    ${EIGEN3_INCLUDE_DIRS}
+)
+
 # register nodes as components
 rclcpp_components_register_node(${PROJECT_NAME}
   PLUGIN vesc_ackermann::AckermannToVesc

@@ -12,7 +12,6 @@
 #include "vesc_msgs/msg/vesc_state_stamped.hpp"
 #include "vesc_msgs/msg/vesc_imu_stamped.hpp"
 #include "ackermann_msgs/msg/ackermann_drive_stamped.hpp"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "std_msgs/msg/float64.hpp"
 
 using std::placeholders::_1;
@@ -76,10 +75,10 @@ private:
   Eigen::Matrix3d P_;
 };
 
-class VescToOdomEKF : public rclcpp::Node {
+class VescToOdomWithEKF : public rclcpp::Node {
 public:
-  VescToOdomEKF(const rclcpp::NodeOptions & options)
-  : Node("vesc_to_odom_ekf_node", options),
+  VescToOdomWithEKF(const rclcpp::NodeOptions & options)
+  : Node("vesc_to_odom_with_ekf_node", options),
     x_(0.0), y_(0.0)
   {
     // Declare parameters (these can be overwritten by YAML/launch files)
@@ -89,22 +88,20 @@ public:
     speed_to_erpm_offset_ = declare_parameter("speed_to_erpm_offset", 0.0);
     wheelbase_ = declare_parameter("wheelbase", 0.0);
     steering_to_servo_gain_ = declare_parameter("steering_angle_to_servo_gain", 0.0);
-
-    RCLCPP_INFO(this->get_logger(), "current wheelbase is %f", wheelbase_);
     
     // Declare and use parameter to decide if servo command should be used
     use_servo_cmd_ = declare_parameter("use_servo_cmd_to_calc_angular_velocity", true);
     
     // Publishers and Subscribers
     odom_pub_ = create_publisher<vesc_msgs::msg::MyOdom>("odom", 10);
-    vesc_state_sub_ = create_subscription<VescStateStamped>(
-      "sensors/core", 10, std::bind(&VescToOdomEKF::vescStateCallback, this, _1));
-    imu_sub_ = create_subscription<VescImuStamped>(
-      "sensors/imu", 10, std::bind(&VescToOdomEKF::imuCallback, this, _1));
+    vesc_state_sub_ = create_subscription<vesc_msgs::msg::VescStateStamped>(
+      "sensors/core", 10, std::bind(&VescToOdomWithEKF::vescStateCallback, this, _1));
+    imu_sub_ = create_subscription<vesc_msgs::msg::VescImuStamped>(
+      "sensors/imu", 10, std::bind(&VescToOdomWithEKF::imuCallback, this, _1));
     
     if (use_servo_cmd_) {
-      servo_sub_ = create_subscription<Float64>(
-         "sensors/servo_position_command", 10, std::bind(&VescToOdomEKF::servoCmdCallback, this, _1));
+      servo_sub_ = create_subscription<std_msgs::msg::Float64>(
+         "sensors/servo_position_command", 10, std::bind(&VescToOdomWithEKF::servoCmdCallback, this, _1));
     }
     
     last_time_ = this->now();
@@ -112,7 +109,7 @@ public:
   
 private:
   // Vesc state callback: Use VESC state (and servo command if available) to drive the EKF prediction
-  void vescStateCallback(const VescStateStamped::SharedPtr state) {
+  void vescStateCallback(const vesc_msgs::msg::VescStateStamped::SharedPtr state) {
     double current_speed = (-state->state.speed - speed_to_erpm_offset_) / speed_to_erpm_gain_;
     if (std::fabs(current_speed) < 0.05)
       current_speed = 0.0;
@@ -136,6 +133,8 @@ private:
     x_ = state_est(0);
     y_ = state_est(1);
     double theta_est = state_est(2); // radian
+
+    double theta_est_deg = theta_est * 180 / M_PI;
     
     // Publish odom message (MyOdom: assume yaw is in rad)
     vesc_msgs::msg::MyOdom odom_msg;
@@ -143,7 +142,7 @@ private:
     odom_msg.header.frame_id = odom_frame_;
     odom_msg.x = x_;
     odom_msg.y = y_;
-    odom_msg.yaw = theta_est;
+    odom_msg.yaw = theta_est_deg;
     odom_msg.linear_velocity = current_speed;
     odom_msg.angular_velocity = w_control;
     
@@ -151,10 +150,10 @@ private:
   }
   
   // IMU callback: Use IMU yaw measurement (provided in degree) to update the EKF
-  void imuCallback(const VescImuStamped::SharedPtr imu) {
+  void imuCallback(const vesc_msgs::msg::VescImuStamped::SharedPtr imu) {
     // IMU 메시지에 이미 yaw 값이 degree 단위로 포함되어 있다고 가정합니다.
     // 예: imu->yaw 필드가 degree 단위의 yaw 값을 제공합니다.
-    double measured_yaw_deg = imu->yaw; 
+    double measured_yaw_deg = imu->imu.ypr.z; 
     // EKF 내부는 radian 단위를 사용하므로 변환
     double measured_yaw_rad = measured_yaw_deg * M_PI / 180.0;
     
@@ -164,14 +163,14 @@ private:
   }
   
   // Servo command callback: Store the latest servo command for control input calculation
-  void servoCmdCallback(const Float64::SharedPtr servo) {
+  void servoCmdCallback(const std_msgs::msg::Float64::SharedPtr servo) {
     last_servo_cmd_ = servo;
   }
   
   rclcpp::Publisher<vesc_msgs::msg::MyOdom>::SharedPtr odom_pub_;
-  rclcpp::Subscription<VescStateStamped>::SharedPtr vesc_state_sub_;
-  rclcpp::Subscription<VescImuStamped>::SharedPtr imu_sub_;
-  rclcpp::Subscription<Float64>::SharedPtr servo_sub_;
+  rclcpp::Subscription<vesc_msgs::msg::VescStateStamped>::SharedPtr vesc_state_sub_;
+  rclcpp::Subscription<vesc_msgs::msg::VescImuStamped>::SharedPtr imu_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr servo_sub_;
   
   rclcpp::Time last_time_;
   
@@ -184,7 +183,7 @@ private:
   double steering_to_servo_gain_;
   
   bool use_servo_cmd_;
-  std::shared_ptr<Float64> last_servo_cmd_;
+  std::shared_ptr<std_msgs::msg::Float64> last_servo_cmd_;
   
   EKF ekf_;
 };
@@ -192,4 +191,4 @@ private:
 } // namespace vesc_ackermann
 
 #include "rclcpp_components/register_node_macro.hpp"
-RCLCPP_COMPONENTS_REGISTER_NODE(vesc_ackermann::VescToOdomEKF)
+RCLCPP_COMPONENTS_REGISTER_NODE(vesc_ackermann::VescToOdomWithEKF)

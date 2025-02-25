@@ -128,7 +128,7 @@ double VescToOdomWithIMU::complementaryFilter(double previous_yaw, double imu_ra
   double alpha = 0.98;
   // imu_rate는 rad/s 단위 -> 도/s 단위로 변환
   // double imu_rate_deg = imu_rate * 180.0 / M_PI;
-  double imu_yaw = previous_yaw + imu_rate_deg * dt;
+  double imu_yaw = previous_yaw + imu_rate * dt;
   // 이전 yaw와 새로운 imu_yaw를 보완하여 반환 (모두 degree 단위)
   return alpha * imu_yaw + (1.0 - alpha) * previous_yaw;
 }
