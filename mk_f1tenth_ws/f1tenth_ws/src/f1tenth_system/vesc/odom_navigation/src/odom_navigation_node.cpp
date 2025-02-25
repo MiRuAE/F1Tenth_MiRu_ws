@@ -19,7 +19,7 @@ class OdomNavigationNode : public rclcpp::Node
 public:
   OdomNavigationNode()
   : Node("odom_navigation_node"),
-    target_set_(false), target_not_set_logged_(false),
+    target_set_(false),
     goal_reached_(false)  // 초기에는 목표에 도달하지 않음
   {
     // 목표 좌표에 대한 기본값은 설정하지 않음.
@@ -86,13 +86,8 @@ private:
   {
     std::lock_guard<std::mutex> lock(target_mutex_);
     if (!target_set_) {
-      if (!target_not_set_logged_) {
-        RCLCPP_INFO(this->get_logger(), "Target not set. Waiting for user input...");
-        target_not_set_logged_ = true; // 한 번만 출력되도록 설정
-      }
+      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Target not set. Waiting for user input...");
       return;
-    } else {
-      target_not_set_logged_ = false; // 목표가 설정되면 다시 로그 출력 가능하도록 초기화
     }
 
     // // 현재 위치
@@ -214,7 +209,6 @@ private:
   double target_x_;
   double target_y_;
   bool target_set_;
-  bool target_not_set_logged_;
   bool goal_reached_;  // 목표에 도달했는지 여부를 저장하는 플래그
   double goal_tolerance_;
   double max_speed_;
