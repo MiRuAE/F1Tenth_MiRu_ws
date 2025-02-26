@@ -7,7 +7,6 @@
 #include <mutex>
 
 #include "rclcpp/rclcpp.hpp"
-// #include "nav_msgs/msg/odometry.hpp"
 #include "vesc_msgs/msg/my_odom.hpp"
 #include "ackermann_msgs/msg/ackermann_drive_stamped.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -20,42 +19,68 @@ public:
   OdomNavigationNode()
   : Node("odom_navigation_node"),
     target_set_(false),
-    goal_reached_(false)  // 초기에는 목표에 도달하지 않음
+    goal_reached_(false),
+    prev_cte_(0.0),
+    integral_cte_(0.0),
+    prev_speed_error_(0.0),
+    integral_speed_error_(0.0)
   {
-    // 목표 좌표에 대한 기본값은 설정하지 않음.
-    // 만약 파라미터를 선언하더라도, target_set_ 플래그로 실제 사용 여부를 결정합니다.
+    // 기존 목표 좌표 및 속도 관련 파라미터
     this->declare_parameter<double>("target_x", 0.0);
     this->declare_parameter<double>("target_y", 0.0);
-    // 나머지 파라미터는 기존과 동일하게 선언
     this->declare_parameter<double>("goal_tolerance", 0.05);
-    this->declare_parameter<double>("max_speed", 1.5);
-    this->declare_parameter<double>("min_speed", 0.5);
-    this->declare_parameter<double>("kp_speed", 0.5);
-    this->declare_parameter<double>("kp_steering", 1.0);
-    // this->declare_parameter<double>("max_steer_angle", 0.34);
-    // 기존에 선언된 파라미터들 외에 servo 관련 파라미터들을 선언합니다.
+
+    // Servo 관련 파라미터 (조향각 제한 계산용)
     this->declare_parameter<double>("servo_min", 0.3175);
     this->declare_parameter<double>("servo_max", 0.8405);
     this->declare_parameter<double>("steering_angle_to_servo_gain", -1.2135);
     this->declare_parameter<double>("steering_angle_to_servo_offset", 0.5650);
 
-    // 파라미터 값은 초기값으로만 사용(초기에는 target_set_가 false이므로 무시됨)
+    // Pure Pursuit 관련 파라미터
+    this->declare_parameter<double>("lookahead_distance", 1.0);  // Lookahead 거리 (미터)
+    this->declare_parameter<double>("wheelbase", 0.32);          // 차량 휠베이스 (미터)
+
+    // Steering 제어 PID 파라미터
+    this->declare_parameter<double>("kp_pid", 1.0);
+    this->declare_parameter<double>("ki_pid", 0.0);
+    this->declare_parameter<double>("kd_pid", 0.1);
+
+    // 속도 제어 PID 파라미터 및 감속 구간 설정
+    this->declare_parameter<double>("kp_speed_pid", 0.5);
+    this->declare_parameter<double>("ki_speed_pid", 0.0);
+    this->declare_parameter<double>("kd_speed_pid", 0.0);
+    // 목표와 가까워졌을 때 감속을 위한 거리 (미터)
+    this->declare_parameter<double>("decel_distance", 1.0);
+
+    // 최소/최대 속도 값
+    this->declare_parameter<double>("max_speed", 1.5);
+    this->declare_parameter<double>("min_speed", 0.5);
+
+    // 파라미터 값 초기화
     target_x_ = this->get_parameter("target_x").as_double();
     target_y_ = this->get_parameter("target_y").as_double();
     goal_tolerance_ = this->get_parameter("goal_tolerance").as_double();
+
+    lookahead_distance_ = this->get_parameter("lookahead_distance").as_double();
+    wheelbase_ = this->get_parameter("wheelbase").as_double();
+
+    kp_pid_ = this->get_parameter("kp_pid").as_double();
+    ki_pid_ = this->get_parameter("ki_pid").as_double();
+    kd_pid_ = this->get_parameter("kd_pid").as_double();
+
+    kp_speed_pid_ = this->get_parameter("kp_speed_pid").as_double();
+    ki_speed_pid_ = this->get_parameter("ki_speed_pid").as_double();
+    kd_speed_pid_ = this->get_parameter("kd_speed_pid").as_double();
+    decel_distance_ = this->get_parameter("decel_distance").as_double();
+
     max_speed_ = this->get_parameter("max_speed").as_double();
     min_speed_ = this->get_parameter("min_speed").as_double();
-    kp_speed_ = this->get_parameter("kp_speed").as_double();
-    kp_steering_ = this->get_parameter("kp_steering").as_double();
-    // max_steer_angle_ = this->get_parameter("max_steer_angle").as_double();
-    // YAML 파일에서 값을 가져옵니다.
+
+    // Servo 파라미터를 이용해 조향각 제한 계산 (라디안 단위)
     double servo_min = this->get_parameter("servo_min").as_double();
     double servo_max = this->get_parameter("servo_max").as_double();
     double steering_gain = this->get_parameter("steering_angle_to_servo_gain").as_double();
     double steering_offset = this->get_parameter("steering_angle_to_servo_offset").as_double();
-
-    // 계산 공식: steering_angle = (servo_value - offset) / gain
-    // 여기서, 차량의 최대(최소) 조향각은 servo_min(servo_max)를 사용하여 계산합니다.
     max_steer_angle_ = (servo_min - steering_offset) / steering_gain; // 예: 약 0.2039 rad
     min_steer_angle_ = (servo_max - steering_offset) / steering_gain; // 예: 약 -0.2272 rad
     RCLCPP_INFO(this->get_logger(), "Computed max steer angle: %f rad, min steer angle: %f rad", max_steer_angle_, min_steer_angle_);
@@ -69,7 +94,7 @@ public:
     odom_sub_ = this->create_subscription<vesc_msgs::msg::MyOdom>(
       "/odom", 10, std::bind(&OdomNavigationNode::odomCallback, this, _1));
 
-    // 터미널 입력을 처리할 별도의 스레드를 생성하여 목표 좌표를 갱신
+    // 터미널 입력을 처리할 별도 스레드 생성 (목표 좌표 갱신)
     input_thread_ = std::thread(&OdomNavigationNode::readTargetFromConsole, this);
   }
 
@@ -81,7 +106,6 @@ public:
   }
 
 private:
-  // odom 콜백: target이 설정되어 있을 때만 주행 제어 수행
   void odomCallback(const vesc_msgs::msg::MyOdom::SharedPtr msg)
   {
     std::lock_guard<std::mutex> lock(target_mutex_);
@@ -90,72 +114,93 @@ private:
       return;
     }
 
-    // // 현재 위치
-    // double x = msg->pose.pose.position.x;
-    // double y = msg->pose.pose.position.y;
-
-    // // 현재 자세 (쿼터니언을 오일러 각으로 변환)
-    // tf2::Quaternion q;
-    // tf2::fromMsg(msg->pose.pose.orientation, q);
-    // double roll, pitch, current_yaw;
-    // tf2::Matrix3x3(q).getRPY(roll, pitch, current_yaw);
-
-    // MyOdom 메시지에서 직접 x, y, yaw 값을 사용
+    // 현재 위치 및 자세 (라디안 단위)
     double x = msg->x;
     double y = msg->y;
     double current_yaw = msg->yaw;
 
-    // 목표 좌표와의 오차 계산
+    // 목표 좌표와의 거리 계산
     double dx = target_x_ - x;
     double dy = target_y_ - y;
     double distance = std::sqrt(dx * dx + dy * dy);
 
-    // 목표에 도달한 경우 한 번만 메시지 출력
+    // 목표 도달 체크
     if (distance < goal_tolerance_) {
       if (!goal_reached_) {
         stopVehicle();
         RCLCPP_INFO(this->get_logger(), "Goal reached! Stopping.");
-        goal_reached_ = true; // 한 번만 출력하도록 플래그 설정
+        goal_reached_ = true;
       }
       return;
     } else {
-      // 목표에 도달하지 않은 경우, 다시 주행 중이므로 플래그를 false로 유지
       goal_reached_ = false;
     }
 
-    // std::atan2는 radian 단위를 반환하므로 도로 변환
-    double target_heading = std::atan2(dy, dx) * 180.0 / M_PI;  // degree 단위
-    double heading_error = target_heading - current_yaw;
+    // 목표 방향 (라디안)
+    double target_heading = std::atan2(dy, dx);
 
-    // heading error를 -180 ~ 180 도 범위로 정규화
-    while (heading_error > 180.0)
-      heading_error -= 360.0;
-    while (heading_error < -180.0)
-      heading_error += 360.0;
-
-    // 간단한 P 제어를 이용한 속도 계산
-    double speed_cmd = kp_speed_ * distance;
-    // 최소/최대 속도 제한 적용
-    if (speed_cmd > max_speed_) {
-      speed_cmd = max_speed_;
-    } else if (speed_cmd < min_speed_) {
-      speed_cmd = min_speed_;  // 최소 속도 제한
+    // Lookahead Point 결정
+    double effective_lookahead = lookahead_distance_;
+    double lookahead_x, lookahead_y;
+    if(distance < lookahead_distance_) {
+      lookahead_x = target_x_;
+      lookahead_y = target_y_;
+      effective_lookahead = distance;  // 남은 거리를 사용
+    } else {
+      lookahead_x = x + lookahead_distance_ * std::cos(target_heading);
+      lookahead_y = y + lookahead_distance_ * std::sin(target_heading);
     }
 
-    // 간단한 P 제어를 이용한 조향각 계산
-    double steering_cmd = kp_steering_ * heading_error;
-    // 조향각 명령을 radian 단위로 변환 (1 degree = M_PI/180 rad)
-    double steering_cmd_rad = steering_cmd * M_PI / 180.0;
+    // 현재 위치 기준 Lookahead Point의 상대 좌표 (로컬 좌표계)
+    double rel_x = lookahead_x - x;
+    double rel_y = lookahead_y - y;
+    double transformed_x = std::cos(-current_yaw) * rel_x - std::sin(-current_yaw) * rel_y;
+    double transformed_y = std::sin(-current_yaw) * rel_x + std::cos(-current_yaw) * rel_y;
+
+    // Pure Pursuit 조향각 계산
+    double alpha = std::atan2(transformed_y, transformed_x);
+    double pure_pursuit_steer = std::atan2(2.0 * wheelbase_ * std::sin(alpha), effective_lookahead);
+
+    // Steering PID 보정 (로컬 좌표계 y값을 오차로 사용)
+    double cte = transformed_y;
+    double diff_cte = cte - prev_cte_;
+    integral_cte_ += cte;
+    double pid_correction = kp_pid_ * cte + ki_pid_ * integral_cte_ + kd_pid_ * diff_cte;
+    prev_cte_ = cte;
+
+    // 최종 조향각 = Pure Pursuit 조향각 + PID 보정
+    double steering_cmd_rad = pure_pursuit_steer + pid_correction;
     if (steering_cmd_rad > max_steer_angle_) {
       steering_cmd_rad = max_steer_angle_;
     } else if (steering_cmd_rad < min_steer_angle_) {
       steering_cmd_rad = min_steer_angle_;
     }
-    // if (steering_cmd_rad > max_steer_angle_) {
-    //   steering_cmd_rad = max_steer_angle_;
-    // } else if (steering_cmd_rad < -max_steer_angle_) {
-    //   steering_cmd_rad = -max_steer_angle_;
-    // }
+
+    // =====================
+    // 속도 제어 (PID 적용)
+    // =====================
+    // deceleration 구간 내에서는 목표 속도를 선형 보간하여 낮춤
+    double desired_speed;
+    if(distance < decel_distance_) {
+      desired_speed = min_speed_ + (max_speed_ - min_speed_) * (distance / decel_distance_);
+    } else {
+      desired_speed = max_speed_;
+    }
+    // 현재 속도 (MyOdom 메시지에 velocity 필드가 있다고 가정)
+    double current_speed = msg->linear_velocity;
+    double speed_error = desired_speed - current_speed;
+    double diff_speed_error = speed_error - prev_speed_error_;
+    integral_speed_error_ += speed_error;
+    double speed_cmd = kp_speed_pid_ * speed_error +
+                       ki_speed_pid_ * integral_speed_error_ +
+                       kd_speed_pid_ * diff_speed_error;
+    prev_speed_error_ = speed_error;
+    // 속도 명령을 최소/최대 범위 내로 제한
+    if (speed_cmd > max_speed_) {
+      speed_cmd = max_speed_;
+    } else if (speed_cmd < min_speed_) {
+      speed_cmd = min_speed_;
+    }
 
     // AckermannDriveStamped 메시지 생성 및 퍼블리시
     auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
@@ -174,7 +219,7 @@ private:
     drive_pub_->publish(stop_msg);
   }
 
-  // 터미널 입력을 읽어 목표 좌표를 갱신하는 함수 (별도 스레드에서 실행)
+  // 터미널 입력을 통해 목표 좌표를 갱신 (별도 스레드)
   void readTargetFromConsole()
   {
     while (rclcpp::ok()) {
@@ -196,7 +241,12 @@ private:
         target_x_ = new_target_x;
         target_y_ = new_target_y;
         target_set_ = true;
-        goal_reached_ = false; // 새 목표를 설정하면 goal_reached_ 초기화
+        goal_reached_ = false;
+        // PID 관련 변수 초기화 (새 목표 설정 시)
+        prev_cte_ = 0.0;
+        integral_cte_ = 0.0;
+        prev_speed_error_ = 0.0;
+        integral_speed_error_ = 0.0;
       }
       RCLCPP_INFO(this->get_logger(), "New target set to (x: %f, y: %f)", target_x_, target_y_);
     }
@@ -209,14 +259,31 @@ private:
   double target_x_;
   double target_y_;
   bool target_set_;
-  bool goal_reached_;  // 목표에 도달했는지 여부를 저장하는 플래그
+  bool goal_reached_;
   double goal_tolerance_;
+
+  // 속도 관련 변수
   double max_speed_;
   double min_speed_;
-  double kp_speed_;
-  double kp_steering_;
+
+  // Servo 파라미터로부터 계산된 조향각 제한 (radian 단위)
   double max_steer_angle_;
   double min_steer_angle_;
+
+  // Pure Pursuit 관련
+  double lookahead_distance_;
+  double wheelbase_;
+
+  // Steering PID 제어 파라미터 및 변수
+  double kp_pid_, ki_pid_, kd_pid_;
+  double prev_cte_;
+  double integral_cte_;
+
+  // 속도 PID 제어 파라미터 및 변수
+  double kp_speed_pid_, ki_speed_pid_, kd_speed_pid_;
+  double decel_distance_;
+  double prev_speed_error_;
+  double integral_speed_error_;
 
   std::thread input_thread_;
   std::mutex target_mutex_;
