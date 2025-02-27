@@ -5,18 +5,39 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/cudaimgproc.hpp>
+#include <opencv2/cudafilters.hpp>
 #include <vector>
 #include <cmath>
+#include <chrono>
 
 class LaneFollowingNode : public rclcpp::Node {
   public:
   LaneFollowingNode()
   : Node("lane_following_node"), previous_error_(0.0), integral_(0.0)
   {
-    //Camera parameter
+    // Camera parameter
     int camera_index = 3;
-    int frame_width = 640;
-    int frame_height = 360;
+    
+    std::system("v4l2-ctl -c auto_exposure=1 -d /dev/video3");
+    std::system("v4l2-ctl -d /dev/video3 --set-fmt-video=width=1280,height=720,pixelformat=MJPG");
+    std::system("v4l2-ctl -d /dev/video3 --set-parm=60");
+    cap_.open(camera_index, cv::CAP_V4L2);
+    if (!cap_.isOpened()) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to open camera!");
+    }
+    cap_.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
+    cap_.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
+    cap_.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
+    cap_.set(cv::CAP_PROP_FPS, 60);
+    cap_.set(cv::CAP_PROP_AUTO_EXPOSURE, 1);
+    double width = cap_.get(cv::CAP_PROP_FRAME_WIDTH);
+    double height = cap_.get(cv::CAP_PROP_FRAME_HEIGHT);
+    double fps = cap_.get(cv::CAP_PROP_FPS);
+    std::cout << "Camera settings: " << width << "x" << height << " at " << fps << " fps." << std::endl;
+    // camera attributes
+    //cap_.set(cv::CAP_PROP_FRAME_WIDTH, frame_width);
+    //cap_.set(cv::CAP_PROP_FRAME_HEIGHT, frame_height);
 
     // Threshold parameters
     thresh = 100;      // simple threshold
@@ -45,21 +66,14 @@ class LaneFollowingNode : public rclcpp::Node {
 
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
     drive_pub_ = this->create_publisher<ackermann_msgs::msg::AckermannDriveStamped>("drive", 10);
-    cap_.open(camera_index);
-    if (!cap_.isOpened()) {
-      RCLCPP_ERROR(this->get_logger(), "Failed to open camera!");
-    }
-    // camera attributes
-    cap_.set(cv::CAP_PROP_AUTO_EXPOSURE, 1);
-    cap_.set(cv::CAP_PROP_BRIGHTNESS, 128);
-    cap_.set(cv::CAP_PROP_FRAME_WIDTH, frame_width);
-    cap_.set(cv::CAP_PROP_FRAME_HEIGHT, frame_height);
+    
+    
+    prev_time_ = this->now();
     timer_ = this->create_wall_timer(
-      std::chrono::milliseconds(10),
+      std::chrono::milliseconds(15),
       std::bind(&LaneFollowingNode::timer_callback, this));
       cv::namedWindow("Lane Detection", cv::WINDOW_AUTOSIZE);
-      cv::namedWindow("Gaussian Blur", cv::WINDOW_AUTOSIZE);
-      cv::namedWindow("Canny Edges", cv::WINDOW_AUTOSIZE);
+      cv::namedWindow("Masked", cv::WINDOW_AUTOSIZE);
     RCLCPP_INFO(this->get_logger(), "LaneFollowingNode started.");
   }
   ~LaneFollowingNode() {
@@ -130,6 +144,12 @@ private:
   }
 
   void timer_callback() {
+  
+    rclcpp::Time current_time = this->now();
+    double diff_sec = (current_time - prev_time_).seconds() * 1000.0 - 16.67;
+    RCLCPP_INFO(this->get_logger(), "Time difference: %f ms", diff_sec);
+    prev_time_ = current_time;
+    
     cv::Mat frame;
     if (!cap_.read(frame)) {
       RCLCPP_ERROR(this->get_logger(), "Failed to capture frame!");
@@ -159,11 +179,23 @@ private:
 
     // Gaussian Blur
     cv::Mat blurred;
-    cv::GaussianBlur(binary, blurred, cv::Size(gaus_blur_size, gaus_blur_size), 0);
+    {
+      cv::cuda::GpuMat gpu_binary, gpu_blurred;
+      gpu_binary.upload(binary);
+      cv::Ptr<cv::cuda::Filter> gaussFilter = cv::cuda::createGaussianFilter(gpu_binary.type(), gpu_binary.type(), cv::Size(gaus_blur_size, gaus_blur_size), 0);
+      gaussFilter->apply(gpu_binary, gpu_blurred);
+      gpu_blurred.download(blurred);
+    }
 
     // Canny Edge
     cv::Mat edges;
-    cv::Canny(blurred, edges, canny_inf, canny_sup);
+    {
+      cv::cuda::GpuMat gpu_blurred, gpu_edges;
+      gpu_blurred.upload(blurred);
+      cv::Ptr<cv::cuda::CannyEdgeDetector> canny = cv::cuda::createCannyEdgeDetector(canny_inf, canny_sup);
+      canny->detect(gpu_blurred, gpu_edges);
+      gpu_edges.download(edges);
+    }
 
     // Hough Transform
     std::vector<cv::Vec4i> lines;
@@ -178,11 +210,10 @@ private:
     auto left_avg = weighted_average_line(left_lines);
     auto right_avg = weighted_average_line(right_lines);
 
-    // [10] Predict lane coordinates based on the averaged slope and intercept
-    //      ROI range: 0 ~ roi_frame.rows (since the ROI starts at y=0)
+    // lane coordinates
     int roi_height = roi_frame.rows;
-    int y_min = 0;          // top of ROI
-    int y_max = roi_height; // bottom of ROI
+    int y_min = 0;
+    int y_max = roi_height;
 
     cv::Point left_pt1, left_pt2, right_pt1, right_pt2;
     if (!left_lines.empty()) {
@@ -207,39 +238,24 @@ private:
       lane_center_x = right_pt1.x - width / 2;
     }
 
-    // [12] Visualization: draw lines on the original image (with ROI offset)
+    // Visualization
     cv::Mat laneVis = frame.clone();
-    int offset_y = roi_rect.y; // offset to match original image coordinates
-
-    // Draw left line in blue
+    int offset_y = roi_rect.y;
+    
     if (!left_lines.empty()) {
-      cv::line(
-        laneVis,
-        cv::Point(left_pt1.x, left_pt1.y + offset_y),
-        cv::Point(left_pt2.x, left_pt2.y + offset_y),
-        cv::Scalar(255, 0, 0), 3
-      );
+      cv::line(laneVis, cv::Point(left_pt1.x, left_pt1.y + offset_y), cv::Point(left_pt2.x, left_pt2.y + offset_y), cv::Scalar(255, 0, 0), 3);
     }
-    // Draw right line in green
     if (!right_lines.empty()) {
-      cv::line(
-        laneVis,
-        cv::Point(right_pt1.x, right_pt1.y + offset_y),
-        cv::Point(right_pt2.x, right_pt2.y + offset_y),
-        cv::Scalar(0, 255, 0), 3
-      );
+      cv::line(laneVis, cv::Point(right_pt1.x, right_pt1.y + offset_y), cv::Point(right_pt2.x, right_pt2.y + offset_y), cv::Scalar(0, 255, 0), 3);
     }
-
-    // Draw lane center 
     cv::circle(laneVis, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(255, 0, 0), -1);
 
-    // Display windows
+    // Display
     cv::imshow("Lane Detection", laneVis);
-    cv::imshow("Gaussian Blur", blurred);
-    cv::imshow("Canny Edges", edges);
+    cv::imshow("Masked", edges);
     cv::waitKey(1);
-
-    // [13] Simple proportional control (P-control)
+    
+    // PID control
     double error = static_cast<double>(lane_center_x) - (width / 2.0);
     integral_ += error;
     double derivative = error - previous_error_;
@@ -249,16 +265,16 @@ private:
     
     drive_speed = speed_control(steering);
 
-    // Publish steering commands
+    // Publish
     auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
     drive_msg.header.stamp = this->now();
     drive_msg.drive.steering_angle = steering;
     drive_msg.drive.speed = drive_speed;
     drive_pub_->publish(drive_msg);
-
   }
   
   // Member variables
+  rclcpp::Time prev_time_;
   rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
   cv::VideoCapture cap_;
@@ -282,6 +298,4 @@ int main(int argc, char **argv) {
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
-  }
-
-
+}
