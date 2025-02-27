@@ -37,23 +37,23 @@ public:
     this->declare_parameter<double>("steering_angle_to_servo_offset", 0.5650);
 
     // Pure Pursuit 관련 파라미터
-    this->declare_parameter<double>("lookahead_distance", 1.0);  // Lookahead 거리 (미터)
+    this->declare_parameter<double>("lookahead_distance", 0.5);  // Lookahead 거리 (미터)
     this->declare_parameter<double>("wheelbase", 0.32);          // 차량 휠베이스 (미터)
 
     // Steering 제어 PID 파라미터
-    this->declare_parameter<double>("kp_pid", 1.0);
+    this->declare_parameter<double>("kp_pid", 0.0);
     this->declare_parameter<double>("ki_pid", 0.0);
-    this->declare_parameter<double>("kd_pid", 0.1);
+    this->declare_parameter<double>("kd_pid", 0.0);
 
     // 속도 제어 PID 파라미터 및 감속 구간 설정
     this->declare_parameter<double>("kp_speed_pid", 0.5);
     this->declare_parameter<double>("ki_speed_pid", 0.0);
     this->declare_parameter<double>("kd_speed_pid", 0.0);
     // 목표와 가까워졌을 때 감속을 위한 거리 (미터)
-    this->declare_parameter<double>("decel_distance", 1.0);
+    this->declare_parameter<double>("decel_distance", 0.5);
 
     // 최소/최대 속도 값
-    this->declare_parameter<double>("max_speed", 1.5);
+    this->declare_parameter<double>("max_speed", 2.5);
     this->declare_parameter<double>("min_speed", 0.5);
 
     // 파라미터 값 초기화
@@ -96,6 +96,13 @@ public:
 
     // 터미널 입력을 처리할 별도 스레드 생성 (목표 좌표 갱신)
     input_thread_ = std::thread(&OdomNavigationNode::readTargetFromConsole, this);
+    
+    // 🔹 파라미터 변경 콜백 등록
+    param_callback_handle_ = this->add_on_set_parameters_callback(
+      std::bind(&OdomNavigationNode::onParameterChange, this, std::placeholders::_1));
+
+    // 로그 출력
+    RCLCPP_INFO(this->get_logger(), "PID 초기값: Kp = %f, Ki = %f, Kd = %f", kp_pid_, ki_pid_, kd_pid_);
   }
 
   ~OdomNavigationNode() override
@@ -118,12 +125,15 @@ private:
     double x = msg->x;
     double y = msg->y;
     double current_yaw = msg->yaw;
+    
+    double current_yaw_rad = current_yaw * M_PI / 180;
 
     // 목표 좌표와의 거리 계산
     double dx = target_x_ - x;
     double dy = target_y_ - y;
     double distance = std::sqrt(dx * dx + dy * dy);
 
+    RCLCPP_INFO(this->get_logger(), "Distance to goal: %f, Goal tolerance: %f", distance, goal_tolerance_);
     // 목표 도달 체크
     if (distance < goal_tolerance_) {
       if (!goal_reached_) {
@@ -154,8 +164,8 @@ private:
     // 현재 위치 기준 Lookahead Point의 상대 좌표 (로컬 좌표계)
     double rel_x = lookahead_x - x;
     double rel_y = lookahead_y - y;
-    double transformed_x = std::cos(-current_yaw) * rel_x - std::sin(-current_yaw) * rel_y;
-    double transformed_y = std::sin(-current_yaw) * rel_x + std::cos(-current_yaw) * rel_y;
+    double transformed_x = std::cos(-current_yaw_rad) * rel_x - std::sin(-current_yaw_rad) * rel_y;
+    double transformed_y = std::sin(-current_yaw_rad) * rel_x + std::cos(-current_yaw_rad) * rel_y;
 
     // Pure Pursuit 조향각 계산
     double alpha = std::atan2(transformed_y, transformed_x);
@@ -212,6 +222,7 @@ private:
 
   void stopVehicle()
   {
+    RCLCPP_INFO(this->get_logger(), "stopVehicle() called! Publishing stop command.");
     auto stop_msg = ackermann_msgs::msg::AckermannDriveStamped();
     stop_msg.header.stamp = this->get_clock()->now();
     stop_msg.drive.speed = 0.0;
@@ -251,10 +262,36 @@ private:
       RCLCPP_INFO(this->get_logger(), "New target set to (x: %f, y: %f)", target_x_, target_y_);
     }
   }
+  
+  // 🔹 파라미터 변경 감지 콜백 함수
+  rcl_interfaces::msg::SetParametersResult onParameterChange(
+    const std::vector<rclcpp::Parameter> &parameters)
+  {
+    for (const auto &param : parameters)
+    {
+      if (param.get_name() == "kp_pid") {
+        kp_pid_ = param.as_double();
+        RCLCPP_INFO(this->get_logger(), "Kp 변경됨: %f", kp_pid_);
+      }
+      else if (param.get_name() == "ki_pid") {
+        ki_pid_ = param.as_double();
+        RCLCPP_INFO(this->get_logger(), "Ki 변경됨: %f", ki_pid_);
+      }
+      else if (param.get_name() == "kd_pid") {
+        kd_pid_ = param.as_double();
+        RCLCPP_INFO(this->get_logger(), "Kd 변경됨: %f", kd_pid_);
+      }
+    }
+    rcl_interfaces::msg::SetParametersResult result;
+    result.successful = true;
+    return result;
+  }
 
   // 멤버 변수
   rclcpp::Subscription<vesc_msgs::msg::MyOdom>::SharedPtr odom_sub_;
   rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_pub_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
+
 
   double target_x_;
   double target_y_;
