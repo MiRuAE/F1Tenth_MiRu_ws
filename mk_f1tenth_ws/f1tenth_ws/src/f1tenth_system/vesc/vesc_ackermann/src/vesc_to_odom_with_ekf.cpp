@@ -139,10 +139,13 @@ private:
   void imuCallback(const vesc_msgs::msg::VescImuStamped::SharedPtr imu) {
     double measured_yaw_deg = -imu->imu.ypr.z;
     double measured_yaw_rad = measured_yaw_deg * M_PI / 180.0;
+    
+    // imu_yaw_rate = -imu->imu.angular_velocity.z * M_PI / 180;
 
     if (std::isnan(initial_yaw_)) {
       initial_yaw_ = measured_yaw_rad;
       RCLCPP_INFO(this->get_logger(), "Initial Yaw Set: %f rad", initial_yaw_);
+      return;
     }
 
     double corrected_yaw = measured_yaw_rad - initial_yaw_;
@@ -167,6 +170,7 @@ private:
   
   double x_, y_;
   double initial_yaw_;
+  double imu_yaw_rate;
 
   std::string odom_frame_;
   std::string base_frame_;
