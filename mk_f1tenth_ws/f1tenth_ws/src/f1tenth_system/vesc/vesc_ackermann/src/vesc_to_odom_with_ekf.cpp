@@ -115,7 +115,7 @@ private:
     double dt = (current_time - last_time_).seconds();
     last_time_ = current_time;
 
-    ekf_.predict(dt, current_speed, w_control);
+    ekf_.predict(dt, current_speed, real_yaw_rate);
 
     Eigen::Vector3d state_est = ekf_.getState();
     x_ = state_est(0);
@@ -140,7 +140,8 @@ private:
     double measured_yaw_deg = -imu->imu.ypr.z;
     double measured_yaw_rad = measured_yaw_deg * M_PI / 180.0;
     
-    // imu_yaw_rate = -imu->imu.angular_velocity.z * M_PI / 180;
+    imu_yaw_rate = -imu->imu.angular_velocity.z * M_PI / 180;
+    real_yaw_rate = imu_yaw_rate * (1 - 0.15 / 0.32);
 
     if (std::isnan(initial_yaw_)) {
       initial_yaw_ = measured_yaw_rad;
@@ -171,6 +172,7 @@ private:
   double x_, y_;
   double initial_yaw_;
   double imu_yaw_rate;
+  double real_yaw_rate;
 
   std::string odom_frame_;
   std::string base_frame_;
