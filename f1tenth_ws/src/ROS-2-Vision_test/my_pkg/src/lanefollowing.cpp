@@ -5,8 +5,6 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/cudaimgproc.hpp>
-#include <opencv2/cudafilters.hpp>
 #include <vector>
 #include <cmath>
 #include <chrono>
@@ -27,10 +25,10 @@ class LaneFollowingNode : public rclcpp::Node {
       RCLCPP_ERROR(this->get_logger(), "Failed to open camera!");
     }
     cap_.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
-    cap_.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
-    cap_.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
-    cap_.set(cv::CAP_PROP_FPS, 60);
-    cap_.set(cv::CAP_PROP_AUTO_EXPOSURE, 1);
+cap_.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
+cap_.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
+cap_.set(cv::CAP_PROP_FPS, 60);
+cap_.set(cv::CAP_PROP_AUTO_EXPOSURE, 1);
     double width = cap_.get(cv::CAP_PROP_FRAME_WIDTH);
     double height = cap_.get(cv::CAP_PROP_FRAME_HEIGHT);
     double fps = cap_.get(cv::CAP_PROP_FPS);
@@ -179,23 +177,11 @@ private:
 
     // Gaussian Blur
     cv::Mat blurred;
-    {
-      cv::cuda::GpuMat gpu_binary, gpu_blurred;
-      gpu_binary.upload(binary);
-      cv::Ptr<cv::cuda::Filter> gaussFilter = cv::cuda::createGaussianFilter(gpu_binary.type(), gpu_binary.type(), cv::Size(gaus_blur_size, gaus_blur_size), 0);
-      gaussFilter->apply(gpu_binary, gpu_blurred);
-      gpu_blurred.download(blurred);
-    }
+    cv::GaussianBlur(binary, blurred, cv::Size(gaus_blur_size, gaus_blur_size), 0);
 
     // Canny Edge
     cv::Mat edges;
-    {
-      cv::cuda::GpuMat gpu_blurred, gpu_edges;
-      gpu_blurred.upload(blurred);
-      cv::Ptr<cv::cuda::CannyEdgeDetector> canny = cv::cuda::createCannyEdgeDetector(canny_inf, canny_sup);
-      canny->detect(gpu_blurred, gpu_edges);
-      gpu_edges.download(edges);
-    }
+    cv::Canny(blurred, edges, canny_inf, canny_sup);
 
     // Hough Transform
     std::vector<cv::Vec4i> lines;
@@ -255,6 +241,7 @@ private:
     cv::imshow("Masked", edges);
     cv::waitKey(1);
     
+
     // PID control
     double error = static_cast<double>(lane_center_x) - (width / 2.0);
     integral_ += error;
@@ -271,6 +258,9 @@ private:
     drive_msg.drive.steering_angle = steering;
     drive_msg.drive.speed = drive_speed;
     drive_pub_->publish(drive_msg);
+    
+    
+    
   }
   
   // Member variables
@@ -298,4 +288,4 @@ int main(int argc, char **argv) {
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
-}
+  }
