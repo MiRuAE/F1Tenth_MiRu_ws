@@ -305,28 +305,43 @@ private:
         double drive_speed = 0.0;
         double steering_degree = std::abs(steering_angle * 180 / M_PI);
 
+        double lookahead = processed_ranges[best_point_index] * 0.8;
+
+        double pure_pursuit_steer = std::atan2(2.0 * 0.32 * std::sin(steering_angle), lookahead);
+
+        //-------------------- Test Mode -----------------//
+        /*if (steering_degree <= 5.0) {  // 거의 직진*/
+        /*    drive_speed = 2.0;*/
+        /*} else if (steering_degree <= 10.0) {  // 약간의 커브*/
+        /*    drive_speed = 1.5;*/
+        /*} else if (steering_degree <= 15.0) {  // 완만한 커브*/
+        /*    drive_speed = 1.2;*/
+        /*} else {  // 중간 커브*/
+        /*    drive_speed = 0.8;*/
+        /*}*/
         //-------------------- Normal Mode -----------------//
-        if (steering_degree <= 5.0) {  // 거의 직진
-            drive_speed = 1.2;
-        } else if (steering_degree <= 10.0) {  // 약간의 커브
-            drive_speed = 1.0;
-        } else if (steering_degree <= 15.0) {  // 완만한 커브
-            drive_speed = 0.8;
-        } else {  // 중간 커브
-            drive_speed = 0.5;
-        }
+        //-------------------- Normal Mode -----------------//
+        /*if (steering_degree <= 5.0) {  // 거의 직진*/
+        /*    drive_speed = 1.2;*/
+        /*} else if (steering_degree <= 10.0) {  // 약간의 커브*/
+        /*    drive_speed = 1.0;*/
+        /*} else if (steering_degree <= 15.0) {  // 완만한 커브*/
+        /*    drive_speed = 0.8;*/
+        /*} else {  // 중간 커브*/
+        /*    drive_speed = 0.5;*/
+        /*}*/
         //-------------------- Normal Mode -----------------//
         
         //-------------------- Fast Mode -------------------//
-        /*if (steering_degree <= 5.0) {  // 거의 직진*/
-        /*    drive_speed = 4.5;*/
-        /*} else if (steering_degree <= 10.0) {  // 약간의 커브*/
-        /*    drive_speed = 3.0;*/
-        /*} else if (steering_degree <= 15.0) {  // 완만한 커브*/
-        /*    drive_speed = 2.8;*/
-        /*} else {  // 중간 커브*/
-        /*    drive_speed = 1.5;*/
-        /*}*/
+        if (steering_degree <= 5.0) {  // 거의 직진
+            drive_speed = 5.5;
+        } else if (steering_degree <= 10.0) {  // 약간의 커브
+            drive_speed = 4.0;
+        } else if (steering_degree <= 15.0) {  // 완만한 커브
+            drive_speed = 3.8;
+        } else {  // 중간 커브
+            drive_speed = 2.5;
+        }
         //-------------------- Fast Mode -------------------//
 
         /*} else if (steering_degree <= 25.0) {  // 급한 커브*/
@@ -359,7 +374,7 @@ private:
         /*    steering_angle = 0.0;*/
         /*}*/
 
-        drive_msg.drive.steering_angle = steering_angle;
+        drive_msg.drive.steering_angle = pure_pursuit_steer;
         drive_msg.drive.speed = drive_speed;
         
         drive_pub_->publish(drive_msg);
