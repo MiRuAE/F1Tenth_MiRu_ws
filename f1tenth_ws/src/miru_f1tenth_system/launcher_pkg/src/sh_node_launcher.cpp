@@ -59,22 +59,21 @@ private:
 
             //maximun angle calculate
             if (disparity_pairs.empty()) {
-                RCLCPP_INFO(this->get_logger(), "No disparity found", current_mode);
+                RCLCPP_INFO(this->get_logger(), "No disparity found");
             }
             else {
                 for (const auto& pair : disparity_pairs) {
-                    if (pair.second - pair.first > max_angle) {
-                        max_angle = pair.second - pair.first;
+                    if (static_cast<float>(pair.second - pair.first) / 4 > max_angle) {
+                        max_angle = static_cast<float>(pair.second - pair.first) / 4;
                     }
                 }
             }
             
-            RCLCPP_INFO(this->get_logger(), "Maximun index difference : %d", max_angle);
+            RCLCPP_INFO(this->get_logger(), "Maximun angle : %0.3f", max_angle);
 
-            if (max_angle > 720){
+            if (max_angle >= 180.0){
                 current_mode = 2;
-                this->set_parameter(rclcpp::Parameter("current_mode", current_mode));
-
+                this->set_parameter(rclcpp::Parameter("current_mode", rclcpp::ParameterValue(current_mode)));
             }
             
         }

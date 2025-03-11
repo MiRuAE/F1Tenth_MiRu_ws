@@ -75,14 +75,14 @@ private:
         // double wall_threshold = 1.5; // 벽으로 판단할 최대 거리
         // int lidar_center = 540; // LiDAR 중앙 인덱스
         
-        // 왼쪽 절반에서 최소 거리 찾기
-        left_min_index = std::min_element(ranges.begin(), ranges.begin() + lidar_center) - ranges.begin();
+        // 왼쪽 = 540부터 끝까지
+        left_min_index = std::min_element(ranges.begin() + lidar_center, ranges.end()) - ranges.begin();
         
         if (ranges[left_min_index] > wall_threshold) return false;
         
-        std::vector<float> group = {ranges[left_min_index]}; // Fixed: min_index -> left_min_index
+        std::vector<float> group = {ranges[left_min_index]};
         double tolerance = 0.2; // 주변 값과 비교할 허용 오차
-        int required_group_size = 100; // 벽으로 판단하기 위한 최소 연속 그룹 개수
+        int required_group_size = 300; // 벽으로 판단하기 위한 최소 연속 그룹 개수
         
         // 그룹의 중앙값 계산 함수
         auto get_median = [](std::vector<float>& group) -> float {
@@ -92,13 +92,13 @@ private:
         };
         
         // 양쪽 방향으로 연속된 유사한 값 찾기
-        for (int i = left_min_index - 1, j = left_min_index + 1; i >= 0 || j < lidar_center; i--, j++) {
+        for (int i = left_min_index - 1, j = left_min_index + 1; i >= lidar_center || j < ranges.size(); i--, j++) {
             float median = get_median(group);
             
-            if (i >= 0 && std::abs(ranges[i] - median) < tolerance) {
+            if (i >= lidar_center && std::abs(ranges[i] - median) < tolerance) {
                 group.push_back(ranges[i]);
             }
-            if (j < lidar_center && std::abs(ranges[j] - median) < tolerance) {
+            if (j < ranges.size() && std::abs(ranges[j] - median) < tolerance) {
                 group.push_back(ranges[j]);
             }
             if (group.size() >= required_group_size) {
@@ -113,12 +113,12 @@ private:
         // double wall_threshold = 1.5; // 벽으로 판단할 최대 거리
         // int lidar_center = 540; // LiDAR 중앙 인덱스
         
-        // 오른쪽 절반에서 최소 거리 찾기
-        right_min_index = std::min_element(ranges.begin() + lidar_center, ranges.end()) - ranges.begin();
+        // 오른쪽 = 540부터 0까지
+        right_min_index = std::min_element(ranges.begin(), ranges.begin() + lidar_center) - ranges.begin();
         
-        if (ranges[right_min_index] > wall_threshold) return false; // Fixed: min_index -> right_min_index
+        if (ranges[right_min_index] > wall_threshold) return false;
         
-        std::vector<float> group = {ranges[right_min_index]}; // Fixed: min_index -> right_min_index
+        std::vector<float> group = {ranges[right_min_index]};
         double tolerance = 0.2; // 주변 값과 비교할 허용 오차
         int required_group_size = 300; // 벽으로 판단하기 위한 최소 연속 그룹 개수
         
@@ -130,13 +130,13 @@ private:
         };
         
         // 양쪽 방향으로 연속된 유사한 값 찾기
-        for (int i = right_min_index - 1, j = right_min_index + 1; i >= lidar_center || j < ranges.size(); i--, j++) {
+        for (int i = right_min_index - 1, j = right_min_index + 1; i >= 0 || j < lidar_center; i--, j++) {
             float median = get_median(group);
             
-            if (i >= lidar_center && std::abs(ranges[i] - median) < tolerance) {
+            if (i >= 0 && std::abs(ranges[i] - median) < tolerance) {
                 group.push_back(ranges[i]);
             }
-            if (j < ranges.size() && std::abs(ranges[j] - median) < tolerance) {
+            if (j < lidar_center && std::abs(ranges[j] - median) < tolerance) {
                 group.push_back(ranges[j]);
             }
             if (group.size() >= required_group_size) {
@@ -167,15 +167,12 @@ private:
             return;
         }
 
-        // Fixed: proper vector initialization
         std::vector<float> processed_ranges(scan_msg->ranges.begin(), scan_msg->ranges.end());
-        processed_ranges = preprocess_lidar(processed_ranges); // Fixed: pass the vector, not scan_msg->ranges()
+        processed_ranges = preprocess_lidar(processed_ranges);
         
         if(detect_corridor(processed_ranges, scan_msg->angle_increment)){
             RCLCPP_INFO(this->get_logger(), "B sector detected");
         }
-
-        // Rest of the code...
     }
 };
 
