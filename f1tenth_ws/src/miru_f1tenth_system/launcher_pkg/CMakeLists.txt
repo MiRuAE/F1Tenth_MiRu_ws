@@ -17,17 +17,45 @@ find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 add_executable(node_launcher src/node_launcher.cpp)
+add_executable(js_node_launcher src/js_node_launcher.cpp)
+add_executable(mk_node_launcher src/mk_node_launcher.cpp)
+add_executable(sh_node_launcher src/sh_node_launcher.cpp)
+
 target_include_directories(node_launcher PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_include_directories(js_node_launcher PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_include_directories(mk_node_launcher PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_include_directories(sh_node_launcher PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 
 ament_target_dependencies(node_launcher
   rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
 )
+ament_target_dependencies(js_node_launcher
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
+)
+ament_target_dependencies(mk_node_launcher
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
+)
+ament_target_dependencies(sh_node_launcher
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
+)
 
 install(TARGETS node_launcher
   DESTINATION lib/${PROJECT_NAME})
-  
+install(TARGETS js_node_launcher
+  DESTINATION lib/${PROJECT_NAME})
+install(TARGETS mk_node_launcher
+  DESTINATION lib/${PROJECT_NAME})
+install(TARGETS sh_node_launcher
+  DESTINATION lib/${PROJECT_NAME})
+
 install(
   DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}/
