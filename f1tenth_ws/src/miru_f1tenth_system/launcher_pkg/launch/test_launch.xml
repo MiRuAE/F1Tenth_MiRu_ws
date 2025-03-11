@@ -1,0 +1,7 @@
+<launch>
+  <arg name="param_file" default="$(find-pkg-share f1tenth_stack)/config/vesc.yaml"/>
+
+  <node pkg="gap_follow" exec="reactive_node" output="screen">
+    <param from="$(var param_file)"/>
+  </node>
+</launch>
