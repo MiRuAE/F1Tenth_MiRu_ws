@@ -17,7 +17,7 @@ public:
             std::bind(&NodeLauncher::lidar_callback, this, std::placeholders::_1));
         
         // Define the distance thresholds
-        threshold_ = this->declare_parameter("threshold", 0.6);
+        threshold_ = this->declare_parameter("threshold", 1.0);
         current_mode = this->declare_parameter("current_mode", 1);
     }
 
@@ -34,7 +34,7 @@ private:
         if (current_mode == 1){
 
             std::vector<int> disparity_indices;
-            float disparity_threshold = 0.1;
+            float disparity_threshold = 0.05;
             float max_angle = 0.0;
 
             //Disparity index sense

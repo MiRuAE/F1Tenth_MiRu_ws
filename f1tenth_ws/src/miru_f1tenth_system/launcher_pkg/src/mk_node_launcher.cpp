@@ -170,8 +170,28 @@ private:
         std::vector<float> processed_ranges(scan_msg->ranges.begin(), scan_msg->ranges.end());
         processed_ranges = preprocess_lidar(processed_ranges);
         
-        if(detect_corridor(processed_ranges, scan_msg->angle_increment)){
-            RCLCPP_INFO(this->get_logger(), "B sector detected");
+        // 개별적으로 각 벽 감지 함수 호출
+        bool left_wall_detected = is_left_wall_start(processed_ranges);
+        bool right_wall_detected = is_right_wall_start(processed_ranges);
+        
+        // 개별 벽 감지 결과 출력 (함수 내부에서 이미 로그를 출력하고 있으므로 생략 가능)
+        // if (left_wall_detected) {
+        //     RCLCPP_INFO(this->get_logger(), "Left Wall detected!");
+        // }
+        // if (right_wall_detected) {
+        //     RCLCPP_INFO(this->get_logger(), "Right Wall detected!");
+        // }
+        
+        // 복도 감지 로직
+        if (left_wall_detected && right_wall_detected) {
+            double angle_threshold = 90.0 * (M_PI / 180.0); // 90도 이상 차이
+            double angle_difference = std::abs(left_min_index - right_min_index) * scan_msg->angle_increment;
+            
+            if (angle_difference > angle_threshold) {
+                RCLCPP_INFO(this->get_logger(), "B sector detected - both walls with sufficient separation");
+            } else {
+                RCLCPP_INFO(this->get_logger(), "Both walls detected but insufficient separation");
+            }
         }
     }
 };
