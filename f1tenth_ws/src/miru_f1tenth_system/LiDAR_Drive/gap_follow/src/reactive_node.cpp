@@ -18,7 +18,7 @@ class ReactiveFollowGap : public rclcpp::Node {
 public:
     ReactiveFollowGap() : Node("reactive_node")
     {
-      double servo_min = this->declare_parameter("servo_min", 0.0);
+        double servo_min = this->declare_parameter<double>("servo_min", 0.0);
         /// TODO: create ROS subscribers and publishers
         // LaserScan 메시지를 구독하여 scan_callback 호출
         scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
@@ -26,7 +26,7 @@ public:
 
         /*// Odometry 메시지를 구독하여 odom_callback 호출*/
         /*odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(*/
-        /*    "/odom", 10, std::bind(&ReactiveFollowGap::odom_callback, this, std::placeholders::_1));*/
+        /* "/odom", 10, std::bind(&ReactiveFollowGap::odom_callback, this, std::placeholders::_1));*/
 
         // AckermannDriveStamped 메시지를 발행하는 퍼블리셔 생성
         drive_pub_ = this->create_publisher<ackermann_msgs::msg::AckermannDriveStamped>("/drive", 10);
@@ -56,25 +56,7 @@ private:
         // Cuttoff with threwindow /swapfileshold
         double scan_threshold = 2.5;
         double min_range = *std::min_element(ranges.begin(), ranges.end());
-        RCLCPP_INFO(this->get_logger(), "Min_range: %f", min_range);
-        /*if (min_range < 0.1) {*/
-        /*  scan_threshold = 0.7;*/
-        /*}*/
-        /*else if (min_range < 0.2) {*/
-        /*    scan_threshold = 0.8; // 너무 가까운 장애물에 대해서는 1m 이하로 설정*/
-        /*}*/
-        /*else if (min_range < 0.3) {*/
-        /*    scan_threshold = 1.0;*/
-        /*}*/
-        /*// 거리가 2~5m일 경우*/
-        /*else if (min_range < 0.6) {*/
-        /*    scan_threshold = 3.5; // 기본적인 2m threshold 설정*/
-        /*}*/
-        /*// 그 외에는 3m로 설정*/
-        /*else {*/
-        /*    scan_threshold = 4.0;*/
-        /*}*/
-            // 거리별 기준점 설정 (min_range, threshold)
+        // RCLCPP_INFO(this->get_logger(), "Min_range: %f", min_range);
 
         // --------------- Fine Tuning Threshold ---------------- //
         struct ThresholdPoint {
@@ -83,35 +65,17 @@ private:
         };
         
         const ThresholdPoint points[] = {
-            {0.15, 0.4},  // 최소 시작점
-            {0.2, 0.8},   // 시작점
-            {0.5, 1.4},   // 초기에는 좀 더 민감하게 증가
+            {0.15, 0.4}, // 최소 시작점
+            {0.2, 0.8}, // 시작점
+            {0.5, 1.4}, // 초기에는 좀 더 민감하게 증가
             {0.8, 1.8},
             {1.1, 2.4},
-            {1.4, 2.8},   // 중간 범위에서는 threshold를 좀 더 큰 폭으로
+            {1.4, 2.8}, // 중간 범위에서는 threshold를 좀 더 큰 폭으로
             {1.7, 3.2},
             {2.0, 3.6},
             {2.3, 3.9},
             {2.6, 4.2},
-            {3.0, 4.5}    // 최대점
-          // ---------
-            /*{0.15, 0.4},  // 최소 시작점*/
-            /*{0.20, 0.6},  // 최소 시작점*/
-            /*{0.50, 1.2},  // 더 조밀한 간격으로 조정*/
-            /*{0.40, 1.3},*/
-            /*{0.50, 1.8},  // 중간 지점부터 급격한 증가*/
-            /*{0.60, 1.5},*/
-            /*{0.65, 1.7},*/
-            /*{0.70, 1.7},*/
-            /*{0.75, 1.8},*/
-            /*{0.80, 1.9},  // 실제 최대 범위 근처*/
-            /*{0.81, 2.2},  // 실제 최대 범위 근처*/
-            /*{0.83, 2.5},  // 실제 최대 범위 근처*/
-            /*{0.85, 3.5},  // 실제 최대 범위*/
-            /*{2.0, 3.6},*/
-            /*{2.3, 3.9},*/
-            /*{2.6, 4.2},*/
-            /*{3.0, 5.5}    // 최대점*/
+            {3.0, 4.5} // 최대점
         };
 
         // 입력된 min_range가 어느 구간에 속하는지 찾기
@@ -255,15 +219,6 @@ private:
         return best_point_index;
     }
 
-    /*int find_best_point(std::vector<float> ranges, int bubble_point_num)*/
-    /*{   */
-    /*    // Start_i & end_i are start and end indicies of max-gap range, respectively*/
-    /*    // Return index of best point in ranges*/
-    /*   // Naive: Choose the furthest point within ranges and go there*/
-    /**/
-    /*    return max_index;*/
-    /*}*/
-
     void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr scan_msg) 
     {   
         if (scan_msg->ranges.empty()) {
@@ -306,61 +261,76 @@ private:
         double drive_speed = 0.0;
         double steering_degree = std::abs(steering_angle * 180 / M_PI);
 
-        //-------------------- Normal Mode -----------------//
-        if (steering_degree <= 5.0) {  // 거의 직진
-            drive_speed = 1.2;
-        } else if (steering_degree <= 10.0) {  // 약간의 커브
-            drive_speed = 1.0;
-        } else if (steering_degree <= 15.0) {  // 완만한 커브
-            drive_speed = 0.8;
-        } else {  // 중간 커브
-            drive_speed = 0.5;
+        double lookahead = processed_ranges[best_point_index];
+        double bestpoint_x = lookahead * std::cos(steering_angle);
+        double bestpoint_y = lookahead * std::sin(steering_angle);
+
+        double lookahead_angle = std::atan2(bestpoint_y, bestpoint_x + 0.27);
+        double lookahead_rear = std::sqrt((bestpoint_x + 0.27) * (bestpoint_x + 0.27) + bestpoint_y * bestpoint_y);
+
+        double lookahead_degree = std::abs(lookahead_angle * 180 / M_PI);
+
+        if(lookahead_degree <= 5.0){
+            lookahead_rear = lookahead_rear * 0.8;
+        } else if(lookahead_degree <= 10.0){
+            lookahead_rear = lookahead_rear * 0.6;
+        } else if(lookahead_degree <= 15.0){
+            lookahead_rear = lookahead_rear * 0.4;
+            RCLCPP_INFO(this->get_logger(), "Lookahead Degree: %f, Lookahead Distance: %f", lookahead_degree, lookahead_rear);
+        } else{
+            lookahead_rear = lookahead_rear * 0.2;
+            RCLCPP_INFO(this->get_logger(), "Lookahead Degree: %f, Lookahead Distance: %f", lookahead_degree, lookahead_rear);
         }
+
+        double pure_pursuit_steer = std::atan2(2.0 * 0.32 * std::sin(lookahead_angle), lookahead_rear);
+
+        //-------------------- Test Mode -----------------//
+        if (steering_degree <= 5.0) { // 거의 직진
+            drive_speed = 2.0;
+        } else if (steering_degree <= 10.0) { // 약간의 커브
+            drive_speed = 1.5;
+        } else if (steering_degree <= 15.0) { // 완만한 커브
+            drive_speed = 1.2;
+        } else { // 중간 커브
+            drive_speed = 0.8;
+        }
+        //-------------------- Normal Mode -----------------//
+        //-------------------- Normal Mode -----------------//
+        /*if (steering_degree <= 5.0) { // 거의 직진*/
+        /* drive_speed = 1.2;*/
+        /*} else if (steering_degree <= 10.0) { // 약간의 커브*/
+        /* drive_speed = 1.0;*/
+        /*} else if (steering_degree <= 15.0) { // 완만한 커브*/
+        /* drive_speed = 0.8;*/
+        /*} else { // 중간 커브*/
+        /* drive_speed = 0.5;*/
+        /*}*/
         //-------------------- Normal Mode -----------------//
         
         //-------------------- Fast Mode -------------------//
-        /*if (steering_degree <= 5.0) {  // 거의 직진*/
-        /*    drive_speed = 4.5;*/
-        /*} else if (steering_degree <= 10.0) {  // 약간의 커브*/
-        /*    drive_speed = 3.0;*/
-        /*} else if (steering_degree <= 15.0) {  // 완만한 커브*/
-        /*    drive_speed = 2.8;*/
-        /*} else {  // 중간 커브*/
-        /*    drive_speed = 1.5;*/
-        /*}*/
+        // if (steering_degree <= 5.0) { // 거의 직진
+        // drive_speed = 8.5;
+        // } else if (steering_degree <= 10.0) { // 약간의 커브
+        // drive_speed = 7.0;
+        // } else if (steering_degree <= 15.0) { // 완만한 커브
+        // drive_speed = 5.8;
+        // } else { // 중간 커브
+        // drive_speed = 4.5;
+        // }
         //-------------------- Fast Mode -------------------//
 
-        /*} else if (steering_degree <= 25.0) {  // 급한 커브*/
-        /*    drive_speed = 0.4;*/
-        /*} else {  // 매우 급한 커브*/
-        /*    drive_speed = 0.2;*/
+        /*} else if (steering_degree <= 25.0) { // 급한 커브*/
+        /* drive_speed = 0.4;*/
+        /*} else { // 매우 급한 커브*/
+        /* drive_speed = 0.2;*/
         /*}*/
         double safe_dist = car_width * 0.5;
         
         left_wing_index = (left_wing - scan_msg->angle_min) / scan_msg->angle_increment;
         right_wing_index = (right_wing - scan_msg->angle_min) / scan_msg->angle_increment;
 
-        /*double min_index_angle = scan_msg->angle_min + (min_index * scan_msg->angle_increment);*/
-        /*double thres_ang = std::asin(car_width / min_range);*/
-        /*if(steering_angle - min_index_angle > 0 && steering_angle - min_index_angle < thres_ang){ // Left*/
-        /*    steering_angle = min_index_angle + thres_ang;*/
-        /*}*/
-        /*else if(steering_angle - min_index_angle < 0 && min_index_angle - steering_angle < thres_ang){ // Right*/
-        /*    steering_angle = min_index_angle - thres_ang;*/
-        /*}*/
-        
-        // Cornor Safety Option
-        /*for(int i = 0; i < right_wing_index; i++){*/
-        /*  if(processed_ranges[i] < safe_dist && steering_angle <= 0.0)*/
-        /*    steering_angle = 0.0;*/
-        /*}*/
-        /**/
-        /*for(int i = left_wing_index; i < data_size; i++){*/
-        /*  if(processed_ranges[i] < safe_dist && steering_angle >= 0.0)*/
-        /*    steering_angle = 0.0;*/
-        /*}*/
 
-        drive_msg.drive.steering_angle = steering_angle;
+        drive_msg.drive.steering_angle = pure_pursuit_steer;
         drive_msg.drive.speed = drive_speed;
         
         drive_pub_->publish(drive_msg);
@@ -376,3 +346,75 @@ int main(int argc, char ** argv) {
     rclcpp::shutdown();
     return 0;
 }
+
+
+
+/*------------------------------------------------------*/
+/*------------------------------------------------------*/
+
+        /*if (min_range < 0.1) {*/
+        /* scan_threshold = 0.7;*/
+        /*}*/
+        /*else if (min_range < 0.2) {*/
+        /* scan_threshold = 0.8; // 너무 가까운 장애물에 대해서는 1m 이하로 설정*/
+        /*}*/
+        /*else if (min_range < 0.3) {*/
+        /* scan_threshold = 1.0;*/
+        /*}*/
+        /*// 거리가 2~5m일 경우*/
+        /*else if (min_range < 0.6) {*/
+        /* scan_threshold = 3.5; // 기본적인 2m threshold 설정*/
+        /*}*/
+        /*// 그 외에는 3m로 설정*/
+        /*else {*/
+        /* scan_threshold = 4.0;*/
+        /*}*/
+            // 거리별 기준점 설정 (min_range, threshold)
+
+          // ---------
+            /*{0.15, 0.4}, // 최소 시작점*/
+            /*{0.20, 0.6}, // 최소 시작점*/
+            /*{0.50, 1.2}, // 더 조밀한 간격으로 조정*/
+            /*{0.40, 1.3},*/
+            /*{0.50, 1.8}, // 중간 지점부터 급격한 증가*/
+            /*{0.60, 1.5},*/
+            /*{0.65, 1.7},*/
+            /*{0.70, 1.7},*/
+            /*{0.75, 1.8},*/
+            /*{0.80, 1.9}, // 실제 최대 범위 근처*/
+            /*{0.81, 2.2}, // 실제 최대 범위 근처*/
+            /*{0.83, 2.5}, // 실제 최대 범위 근처*/
+            /*{0.85, 3.5}, // 실제 최대 범위*/
+            /*{2.0, 3.6},*/
+            /*{2.3, 3.9},*/
+            /*{2.6, 4.2},*/
+            /*{3.0, 5.5} // 최대점*/
+
+    /*int find_best_point(std::vector<float> ranges, int bubble_point_num)*/
+    /*{ */
+    /* // Start_i & end_i are start and end indicies of max-gap range, respectively*/
+    /* // Return index of best point in ranges*/
+    /* // Naive: Choose the furthest point within ranges and go there*/
+    /**/
+    /* return max_index;*/
+    /*}*/
+
+        /*double min_index_angle = scan_msg->angle_min + (min_index * scan_msg->angle_increment);*/
+        /*double thres_ang = std::asin(car_width / min_range);*/
+        /*if(steering_angle - min_index_angle > 0 && steering_angle - min_index_angle < thres_ang){ // Left*/
+        /* steering_angle = min_index_angle + thres_ang;*/
+        /*}*/
+        /*else if(steering_angle - min_index_angle < 0 && min_index_angle - steering_angle < thres_ang){ // Right*/
+        /* steering_angle = min_index_angle - thres_ang;*/
+        /*}*/
+        
+        // Cornor Safety Option
+        /*for(int i = 0; i < right_wing_index; i++){*/
+        /* if(processed_ranges[i] < safe_dist && steering_angle <= 0.0)*/
+        /* steering_angle = 0.0;*/
+        /*}*/
+        /**/
+        /*for(int i = left_wing_index; i < data_size; i++){*/
+        /* if(processed_ranges[i] < safe_dist && steering_angle >= 0.0)*/
+        /* steering_angle = 0.0;*/
+        /*}*/
