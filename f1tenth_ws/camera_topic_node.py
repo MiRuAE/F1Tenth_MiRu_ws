@@ -12,6 +12,10 @@ class CameraPublisher(Node):
         timer_period = 0.1  
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.cap = cv2.VideoCapture(camera_index)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 480)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 270)
+        self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
+
         if not self.cap.isOpened():
             self.get_logger().error("Error!")
         self.bridge = CvBridge()
@@ -22,7 +26,6 @@ class CameraPublisher(Node):
             msg = self.bridge.cv2_to_imgmsg(frame, encoding="bgr8")
             msg.header.stamp = self.get_clock().now().to_msg()
             self.publisher_.publish(msg)
-            self.get_logger().info("Hihit Ballhang!")
         else:
             self.get_logger().error("Error!")
 
