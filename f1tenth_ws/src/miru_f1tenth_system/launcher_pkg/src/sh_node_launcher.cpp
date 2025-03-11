@@ -57,21 +57,29 @@ private:
                 }
             }
 
+            //maximun angle calculate
             if (disparity_pairs.empty()) {
                 RCLCPP_INFO(this->get_logger(), "No disparity found", current_mode);
             }
             else {
                 for (const auto& pair : disparity_pairs) {
-                    if (pair.second - pair.first >= 720) {
-                        current_mode = 2;
-                        this->set_parameter(rclcpp::Parameter("current_mode", current_mode));
+                    if (pair.second - pair.first > max_angle) {
+                        max_angle = pair.second - pair.first;
                     }
                 }
             }
             
+            RCLCPP_INFO(this->get_logger(), "Maximun index difference : %d", max_angle);
+
+            if (max_angle > 720){
+                current_mode = 2;
+                this->set_parameter(rclcpp::Parameter("current_mode", current_mode));
+
+            }
+            
         }
 
-        RCLCPP_INFO(this->get_logger(), "Current Mode : %d", current_mode);
+        RCLCPP_INFO(this->get_logger(), "Current Mode : %d \n", current_mode);
         // //Mode B
         // else if (current_mode == 2){
 
