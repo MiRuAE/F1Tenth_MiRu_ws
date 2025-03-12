@@ -20,6 +20,8 @@ add_executable(node_launcher src/node_launcher.cpp)
 add_executable(js_node_launcher src/js_node_launcher.cpp)
 add_executable(mk_node_launcher src/mk_node_launcher.cpp)
 add_executable(sh_node_launcher src/sh_node_launcher.cpp)
+add_executable(dg_node_launcher src/dg_node_launcher.cpp)
+add_executable(hm_node_launcher src/hm_node_launcher.cpp)
 
 target_include_directories(node_launcher PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -31,6 +33,12 @@ target_include_directories(mk_node_launcher PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 target_include_directories(sh_node_launcher PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_include_directories(dg_node_launcher PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_include_directories(hm_node_launcher PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 
@@ -46,6 +54,12 @@ ament_target_dependencies(mk_node_launcher
 ament_target_dependencies(sh_node_launcher
   rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
 )
+ament_target_dependencies(dg_node_launcher
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
+)
+ament_target_dependencies(hm_node_launcher
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
+)
 
 install(TARGETS node_launcher
   DESTINATION lib/${PROJECT_NAME})
@@ -54,6 +68,10 @@ install(TARGETS js_node_launcher
 install(TARGETS mk_node_launcher
   DESTINATION lib/${PROJECT_NAME})
 install(TARGETS sh_node_launcher
+  DESTINATION lib/${PROJECT_NAME})
+install(TARGETS dg_node_launcher
+  DESTINATION lib/${PROJECT_NAME})
+install(TARGETS hm_node_launcher
   DESTINATION lib/${PROJECT_NAME})
 
 install(
