@@ -104,7 +104,7 @@ private:
         switch (current_mission_) {
             case MISSION_A: {
                 // Detect transition from A to B (entering narrow walls)
-                if (close_percent > 50.0) {
+                if (close_percent + medium_percent > 60.0) {
                     consecutive_b_detections_++;
                     RCLCPP_INFO(this->get_logger(), "Potential Mission B detection (%d/%d)", 
                                 consecutive_b_detections_, b_detection_threshold_);
