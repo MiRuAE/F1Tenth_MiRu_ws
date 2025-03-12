@@ -78,7 +78,7 @@ private:
         if (ranges[left_min_index] > wall_threshold) return false;
         
         std::vector<float> group = {ranges[left_min_index]};
-        double tolerance = 0.2;
+        double tolerance = 0.1;
         int required_group_size = 200;
         
         for (int i = left_min_index - 1; i >= lidar_center; i--) {
@@ -111,7 +111,7 @@ private:
         if (ranges[right_min_index] > wall_threshold) return false;
         
         std::vector<float> group = {ranges[right_min_index]};
-        double tolerance = 0.2;
+        double tolerance = 0.1;
         int required_group_size = 200;
         
         for (int i = right_min_index - 1; i >= 0; i--) {
@@ -138,7 +138,7 @@ private:
     }
 
     bool detect_corridor(std::vector<float>& ranges, double angle_increment) {
-        double angle_threshold = 150.0 * (M_PI / 180.0); // 150도 이상 차이
+        double angle_threshold = 180.0 * (M_PI / 180.0); // 180도 이상 차이
         
         if (is_left_wall_start(ranges) && is_right_wall_start(ranges)) {
             double angle_difference = std::abs(left_min_index - right_min_index) * angle_increment;

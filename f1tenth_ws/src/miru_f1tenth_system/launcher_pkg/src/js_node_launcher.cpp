@@ -103,11 +103,134 @@ private:
         // Mission state transition logic
         switch (current_mission_) {
             case MISSION_A: {
-                // Detect transition from A to B (entering narrow walls)
-                if (close_percent + medium_percent > 60.0) {
+                // Get the front-facing range data (typically around center of scan)
+                int center_index = scan_msg->ranges.size() / 2;
+                int angle_width = scan_msg->ranges.size() / 6;  // ~30 degrees on each side
+                
+                std::vector<float> front_ranges;
+                std::vector<float> left_ranges;
+                std::vector<float> right_ranges;
+                
+                // Collect front ranges (~60 degrees arc)
+                for (int i = center_index - angle_width; i <= center_index + angle_width; i++) {
+                    if (i >= 0 && i < static_cast<int>(scan_msg->ranges.size())) {
+                        float range = scan_msg->ranges[i];
+                        if (std::isfinite(range) && range > 0.0) {
+                            front_ranges.push_back(range);
+                        }
+                    }
+                }
+                
+                // Collect left ranges (~60 degrees arc)
+                for (int i = 0; i < angle_width * 2; i++) {
+                    if (i < static_cast<int>(scan_msg->ranges.size())) {
+                        float range = scan_msg->ranges[i];
+                        if (std::isfinite(range) && range > 0.0) {
+                            left_ranges.push_back(range);
+                        }
+                    }
+                }
+                
+                // Collect right ranges (~60 degrees arc)
+                for (int i = scan_msg->ranges.size() - angle_width * 2; i < static_cast<int>(scan_msg->ranges.size()); i++) {
+                    if (i >= 0) {
+                        float range = scan_msg->ranges[i];
+                        if (std::isfinite(range) && range > 0.0) {
+                            right_ranges.push_back(range);
+                        }
+                    }
+                }
+                
+                // Calculate metrics for each region
+                float front_mean = 0.0f;
+                float left_mean = 0.0f;
+                float right_mean = 0.0f;
+                
+                if (!front_ranges.empty()) {
+                    front_mean = std::accumulate(front_ranges.begin(), front_ranges.end(), 0.0f) / front_ranges.size();
+                }
+                if (!left_ranges.empty()) {
+                    left_mean = std::accumulate(left_ranges.begin(), left_ranges.end(), 0.0f) / left_ranges.size();
+                }
+                if (!right_ranges.empty()) {
+                    right_mean = std::accumulate(right_ranges.begin(), right_ranges.end(), 0.0f) / right_ranges.size();
+                }
+                
+                // Calculate the percentage of close points in each region
+                float front_close_percent = 0.0f;
+                float left_close_percent = 0.0f;
+                float right_close_percent = 0.0f;
+                
+                if (!front_ranges.empty()) {
+                    int front_close_count = std::count_if(front_ranges.begin(), front_ranges.end(),
+                        [this](float range) { return range < close_threshold_; });
+                    front_close_percent = (static_cast<float>(front_close_count) / front_ranges.size()) * 100.0f;
+                }
+                
+                if (!left_ranges.empty()) {
+                    int left_close_count = std::count_if(left_ranges.begin(), left_ranges.end(),
+                        [this](float range) { return range < close_threshold_; });
+                    left_close_percent = (static_cast<float>(left_close_count) / left_ranges.size()) * 100.0f;
+                }
+                
+                if (!right_ranges.empty()) {
+                    int right_close_count = std::count_if(right_ranges.begin(), right_ranges.end(),
+                        [this](float range) { return range < close_threshold_; });
+                    right_close_percent = (static_cast<float>(right_close_count) / right_ranges.size()) * 100.0f;
+                }
+                
+                // Enhanced transition detection logic
+                bool narrow_passage_detected = false;
+                
+                // Check if we're between walls (high close percentage on both sides)
+                if (left_close_percent > 40.0 && right_close_percent > 40.0) {
+                    // Also check if there's a clear path forward
+                    if (front_close_percent < 30.0 && front_mean > medium_threshold_) {
+                        narrow_passage_detected = true;
+                    }
+                }
+                
+                // Alternative condition: check for parallel walls
+                bool parallel_walls = false;
+                if (left_ranges.size() > 10 && right_ranges.size() > 10) {
+                    // Calculate standard deviation of distances on each side
+                    float left_variance = 0.0f, right_variance = 0.0f;
+                    
+                    for (const auto& range : left_ranges) {
+                        left_variance += std::pow(range - left_mean, 2);
+                    }
+                    left_variance /= left_ranges.size();
+                    
+                    for (const auto& range : right_ranges) {
+                        right_variance += std::pow(range - right_mean, 2);
+                    }
+                    right_variance /= right_ranges.size();
+                    
+                    float left_std_dev = std::sqrt(left_variance);
+                    float right_std_dev = std::sqrt(right_variance);
+                    
+                    // If standard deviation is low on both sides and distances are similar,
+                    // we're likely between parallel walls
+                    if (left_std_dev < 0.1 && right_std_dev < 0.1 &&
+                        std::abs(left_mean - right_mean) < 0.3) {
+                        parallel_walls = true;
+                    }
+                }
+                
+                // Log the detailed metrics
+                RCLCPP_INFO(this->get_logger(),
+                            "Front: mean=%.2fm, close=%.1f%% | Left: mean=%.2fm, close=%.1f%% | Right: mean=%.2fm, close=%.1f%%",
+                            front_mean, front_close_percent,
+                            left_mean, left_close_percent,
+                            right_mean, right_close_percent);
+                
+                // Transition logic with multiple conditions
+                if (narrow_passage_detected || parallel_walls) {
                     consecutive_b_detections_++;
-                    RCLCPP_INFO(this->get_logger(), "Potential Mission B detection (%d/%d)", 
-                                consecutive_b_detections_, b_detection_threshold_);
+                    RCLCPP_INFO(this->get_logger(), "Potential Mission B detection (%d/%d) - %s",
+                                consecutive_b_detections_, b_detection_threshold_,
+                                parallel_walls ? "Parallel walls detected" : "Narrow passage detected");
+                    
                     if (consecutive_b_detections_ >= b_detection_threshold_) {
                         RCLCPP_INFO(this->get_logger(), "Transitioning: Mission A -> Mission B");
                         current_mission_ = MISSION_B;
@@ -115,7 +238,10 @@ private:
                         publish_mission_state("MISSION_B");
                     }
                 } else {
-                    consecutive_b_detections_ = 0;
+                    // Gradually decrease counter rather than resetting to add hysteresis
+                    if (consecutive_b_detections_ > 0) {
+                        consecutive_b_detections_--;
+                    }
                 }
                 break;
             }
