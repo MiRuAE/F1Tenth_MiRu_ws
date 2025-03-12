@@ -24,6 +24,8 @@ private:
     double wall_threshold = 1.5;
     int lidar_center = 540;
     int data_size = 0;
+    int comparison_window_size = 5;
+    double similarity_ratio = 0.7;
 
     std::vector<float> preprocess_lidar(std::vector<float>& ranges)
     {   
@@ -45,7 +47,7 @@ private:
             if(padded[i] > scan_threshold)
                 padded[i] = scan_threshold;
         }
-        
+
         for(int i = 0; i < data_size; i++){
             float sum = 0.0;
             for(int j = 0; j < window_size; j++){
@@ -56,54 +58,44 @@ private:
         return ranges;
     }
 
-    bool is_left_wall_start(std::vector<float>& ranges) {
-        left_min_index = std::min_element(ranges.begin() + lidar_center, ranges.end()) - ranges.begin();
-        if (ranges[left_min_index] > wall_threshold) return false;
+    bool is_continuous_wall(std::vector<float>& ranges, int start_index, bool is_left)
+    {
+        if (ranges[start_index] > wall_threshold) return false;
         
-        std::vector<float> group = {ranges[left_min_index]};
-        double tolerance = 0.2;
+        std::vector<float> group = {ranges[start_index]};
+        int count = 1;
         int required_group_size = 300;
+        int dir = is_left ? 1 : -1;
 
-        for (int i = left_min_index - 1, j = left_min_index + 1; i >= lidar_center || j < ranges.size(); i--, j++) {
-            float last_value = group.back();
-            
-            if (i >= lidar_center && std::abs(ranges[i] - last_value) < tolerance) {
+        for (int i = start_index + dir; (is_left ? i < ranges.size() : i >= 0); i += dir) {
+            int similar_count = 0;
+            for (int j = 1; j <= comparison_window_size && (i - j * dir >= 0 && i - j * dir < ranges.size()); ++j) {
+                if (std::abs(ranges[i] - ranges[i - j * dir]) < 0.2) {
+                    similar_count++;
+                }
+            }
+
+            if (static_cast<double>(similar_count) / comparison_window_size >= similarity_ratio) {
                 group.push_back(ranges[i]);
-            }
-            if (j < ranges.size() && std::abs(ranges[j] - last_value) < tolerance) {
-                group.push_back(ranges[j]);
-            }
-            if (group.size() >= required_group_size) {
-                RCLCPP_INFO(this->get_logger(), "Left Wall detected!");
-                return true;
+                count++;
+                if (count >= required_group_size) {
+                    return true;
+                }
+            } else {
+                break;
             }
         }
         return false;
     }
+
+    bool is_left_wall_start(std::vector<float>& ranges) {
+        left_min_index = std::min_element(ranges.begin() + lidar_center, ranges.end()) - ranges.begin();
+        return is_continuous_wall(ranges, left_min_index, true);
+    }
     
     bool is_right_wall_start(std::vector<float>& ranges) {
         right_min_index = std::min_element(ranges.begin(), ranges.begin() + lidar_center) - ranges.begin();
-        if (ranges[right_min_index] > wall_threshold) return false;
-        
-        std::vector<float> group = {ranges[right_min_index]};
-        double tolerance = 0.2;
-        int required_group_size = 300;
-
-        for (int i = right_min_index - 1, j = right_min_index + 1; i >= 0 || j < lidar_center; i--, j++) {
-            float last_value = group.back();
-            
-            if (i >= 0 && std::abs(ranges[i] - last_value) < tolerance) {
-                group.push_back(ranges[i]);
-            }
-            if (j < lidar_center && std::abs(ranges[j] - last_value) < tolerance) {
-                group.push_back(ranges[j]);
-            }
-            if (group.size() >= required_group_size) {
-                RCLCPP_INFO(this->get_logger(), "Right Wall detected!");
-                return true;
-            }
-        }
-        return false;
+        return is_continuous_wall(ranges, right_min_index, false);
     }
 
     void lidar_callback(const sensor_msgs::msg::LaserScan::SharedPtr scan_msg) 
