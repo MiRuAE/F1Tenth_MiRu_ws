@@ -73,7 +73,8 @@ class VescToOdomWithEKF : public rclcpp::Node {
 public:
   VescToOdomWithEKF(const rclcpp::NodeOptions & options)
   : Node("vesc_to_odom_with_ekf_node", options),
-    x_(0.0), y_(0.0), initial_yaw_(std::numeric_limits<double>::quiet_NaN())  
+    x_(0.0), y_(0.0), initial_yaw_(std::numeric_limits<double>::quiet_NaN()),
+    imu_yaw_rate(0.0), real_yaw_rate(0.0), last_servo_cmd_(nullptr)  
   {
     odom_frame_ = declare_parameter("odom_frame", "odom");
     base_frame_ = declare_parameter("base_frame", "base_link");
