@@ -3,6 +3,8 @@
 #include <vector>
 #include <numeric>
 #include <algorithm>
+#include <cstdlib>
+#include <signal.h>
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "ackermann_msgs/msg/ackermann_drive_stamped.hpp"
@@ -17,7 +19,8 @@ enum MissionState {
 class NodeLauncher : public rclcpp::Node {
 public:
     NodeLauncher() : Node("js_node_launcher"), current_mission_(MISSION_A), 
-                     consecutive_b_detections_(0), consecutive_c_detections_(0)
+                     consecutive_b_detections_(0), consecutive_c_detections_(0),
+                     current_node_pid_(-1)
     {
         subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
             lidarscan_topic, 10, 
@@ -36,6 +39,14 @@ public:
         mission_publisher_ = this->create_publisher<std_msgs::msg::String>("current_mission", 10);
         
         RCLCPP_INFO(this->get_logger(), "Starting in Mission A (Camera)");
+        
+        // Start initial mission node
+        launch_mission_node(MISSION_A);
+    }
+
+    ~NodeLauncher() {
+        // Ensure child process is terminated when node is destroyed
+        kill_current_node();
     }
 
 private:
@@ -50,11 +61,53 @@ private:
     int consecutive_c_detections_;
     int b_detection_threshold_;
     int c_detection_threshold_;
+    pid_t current_node_pid_;
     
+    void kill_current_node() {
+        if (current_node_pid_ > 0) {
+            kill(current_node_pid_, SIGTERM);
+            current_node_pid_ = -1;
+        }
+    }
+
+    void launch_mission_node(MissionState mission) {
+        // Kill any existing node
+        kill_current_node();
+
+        // Fork and execute the appropriate node
+        pid_t pid = fork();
+        
+        if (pid == 0) {  // Child process
+            // Execute the appropriate node based on mission
+            switch (mission) {
+                case MISSION_A:
+                    execl("/usr/bin/ros2", "ros2", "run", "camera_basic_pkg", "lanefollowing", NULL);
+                    break;
+                case MISSION_B:
+                    execl("/usr/bin/ros2", "ros2", "run", "gap_follow", "reactive_node", NULL);
+                    break;
+                case MISSION_C:
+                    execl("/usr/bin/ros2", "ros2", "run", "odom_navigation", "odom_navigation_node", "1.8", "2.25", NULL);
+                    break;
+            }
+            // If execl fails
+            RCLCPP_ERROR(this->get_logger(), "Failed to execute node");
+            exit(1);
+        } else if (pid > 0) {  // Parent process
+            current_node_pid_ = pid;
+            RCLCPP_INFO(this->get_logger(), "Launched new node with PID: %d", pid);
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Failed to fork process");
+        }
+    }
+
     void publish_mission_state(const std::string& mission_name) {
         auto message = std_msgs::msg::String();
         message.data = mission_name;
         mission_publisher_->publish(message);
+        
+        // Launch appropriate node for the new mission
+        launch_mission_node(current_mission_);
     }
     
     void lidar_callback(const sensor_msgs::msg::LaserScan::SharedPtr scan_msg) 
