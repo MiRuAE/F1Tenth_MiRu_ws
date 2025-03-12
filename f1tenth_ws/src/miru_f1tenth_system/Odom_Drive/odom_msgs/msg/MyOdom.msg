@@ -1,12 +1,11 @@
-# MyOdometry.msg
-# 기본 헤더(타임스탬프, 프레임 정보 등)
+# Message definition for custom odometry data
 std_msgs/Header header
 
-# 로봇의 위치와 회전 정보
-float64 x
-float64 y
-float64 yaw     # degree
+# Position
+float64 x          # X position in meters
+float64 y          # Y position in meters
+float64 yaw        # Yaw angle in radians
 
-# 선형 및 각속도 정보
-float64 linear_velocity
-float64 angular_velocity    # degree/s
+# Velocity
+float64 linear_velocity     # Linear velocity in m/s
+float64 angular_velocity    # Angular velocity in rad/s

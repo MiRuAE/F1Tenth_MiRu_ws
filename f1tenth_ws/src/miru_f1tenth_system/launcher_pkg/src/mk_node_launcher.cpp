@@ -73,13 +73,13 @@ private:
 
     bool is_left_wall_start(std::vector<float>& ranges) {
         left_min_index = std::min_element(ranges.begin() + lidar_center, ranges.end()) - ranges.begin();
-        RCLCPP_INFO(this->get_logger(), "Left min index: %d, min range: %f", left_min_index, ranges[left_min_index]);
+        //RCLCPP_INFO(this->get_logger(), "Left min index: %d, min range: %f", left_min_index, ranges[left_min_index]);
         
         if (ranges[left_min_index] > wall_threshold) return false;
         
         std::vector<float> group = {ranges[left_min_index]};
         double tolerance = 0.1;
-        int required_group_size = 300;
+        int required_group_size = 200;
         
         for (int i = left_min_index - 1; i >= lidar_center; i--) {
             if (std::abs(ranges[i] - ranges[left_min_index]) < tolerance) {
@@ -106,13 +106,13 @@ private:
     
     bool is_right_wall_start(std::vector<float>& ranges) {
         right_min_index = std::min_element(ranges.begin(), ranges.begin() + lidar_center) - ranges.begin();
-        RCLCPP_INFO(this->get_logger(), "Right min index: %d, min range: %f", right_min_index, ranges[right_min_index]);
+        //RCLCPP_INFO(this->get_logger(), "Right min index: %d, min range: %f", right_min_index, ranges[right_min_index]);
         
         if (ranges[right_min_index] > wall_threshold) return false;
         
         std::vector<float> group = {ranges[right_min_index]};
         double tolerance = 0.1;
-        int required_group_size = 300;
+        int required_group_size = 200;
         
         for (int i = right_min_index - 1; i >= 0; i--) {
             if (std::abs(ranges[i] - ranges[right_min_index]) < tolerance) {
@@ -138,7 +138,7 @@ private:
     }
 
     bool detect_corridor(std::vector<float>& ranges, double angle_increment) {
-        double angle_threshold = 150.0 * (M_PI / 180.0); // 150도 이상 차이
+        double angle_threshold = 180.0 * (M_PI / 180.0); // 180도 이상 차이
         
         if (is_left_wall_start(ranges) && is_right_wall_start(ranges)) {
             double angle_difference = std::abs(left_min_index - right_min_index) * angle_increment;
