@@ -32,5 +32,8 @@
 
   <export>
     <build_type>ament_cmake</build_type>
+    <launch>
+     <launch_file>odom_launch.xml</launch_file>
+    </launch>
   </export>
 </package>

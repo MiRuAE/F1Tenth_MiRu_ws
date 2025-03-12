@@ -92,7 +92,7 @@ public:
 
     // odom 토픽 서브스크라이버 생성
     odom_sub_ = this->create_subscription<odom_msgs::msg::MyOdom>(
-      "/odom", 10, std::bind(&OdomNavigationNode::odomCallback, this, _1));
+      "/my_odom", 10, std::bind(&OdomNavigationNode::odomCallback, this, _1));
 
     // 터미널 입력을 처리할 별도 스레드 생성 (목표 좌표 갱신)
     input_thread_ = std::thread(&OdomNavigationNode::readTargetFromConsole, this);

@@ -1,0 +1,7 @@
+<launch>
+  <arg name="param_file" default="$(find-pkg-share f1tenth_stack)/config/vesc.yaml"/>
+
+  <node pkg="odom_publisher" exec="vesc_to_odom_with_ekf_node" output="screen">
+    <param from="$(var param_file)"/>
+  </node>
+</launch>
