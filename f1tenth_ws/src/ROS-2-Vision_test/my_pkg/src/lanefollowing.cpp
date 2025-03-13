@@ -21,8 +21,8 @@ class LaneFollowingNode : public rclcpp::Node {
       RCLCPP_ERROR(this->get_logger(), "Failed to open camera!");
     }
     cap_.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
-    cap_.set(cv::CAP_PROP_FRAME_WIDTH, 320);
-    cap_.set(cv::CAP_PROP_FRAME_HEIGHT,180);
+    cap_.set(cv::CAP_PROP_FRAME_WIDTH, 640);
+    cap_.set(cv::CAP_PROP_FRAME_HEIGHT, 360);
     cap_.set(cv::CAP_PROP_FPS, 30);
     cap_.set(cv::CAP_PROP_AUTO_EXPOSURE, 1);
     cap_.set(cv::CAP_PROP_BRIGHTNESS, 128);
@@ -37,7 +37,7 @@ class LaneFollowingNode : public rclcpp::Node {
     // Threshold parameters
     thresh = 100;      // simple threshold
     blockSize = 11;     // adaptive threshold
-    C = 0;
+    C = 10;
 
     // Gaussian blur parameter
     gaus_blur_size = 5;
@@ -79,14 +79,11 @@ class LaneFollowingNode : public rclcpp::Node {
 
 
 private:
-  double speed_control(double steering_angle) {
-    double abs_angle = std::abs(steering_angle);
-    double v_max = 1.5;  
-    double v_min = 0.7;  
-    double k = 30.0;     
-    double x0 = 0.2;    
-    double sigmoid = 1.0 / (1.0 + std::exp(k * (abs_angle - x0)));
-    double speed = v_min + (v_max - v_min) * sigmoid;
+  double speed_control(double slope) {
+    double k = 1.0;     
+    double x0 = 3.0;    
+    double sigmoid = 1.0 / (1.0 + std::exp(k * (slope - x0)));
+    double speed = 2.0 - 1.3 * sigmoid;
     return speed;
   }
 
@@ -172,75 +169,110 @@ private:
     cv::threshold(gray, binary, thresh, 255, cv::THRESH_BINARY);
     */
 
-    /*
+    
     // Adaptive threshold
     cv::Mat binary;
     cv::adaptiveThreshold(blurred, binary, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, blockSize, C);
-    */
     
+    /*
     // Otsu threshold
     cv::Mat binary;
     double thresh_val = cv::threshold(blurred, binary, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
-    RCLCPP_INFO(this->get_logger(), "%f", thresh_val);
+    //RCLCPP_INFO(this->get_logger(), "%f", thresh_val);
     
     cv::Mat otsu_adap;
     cv::adaptiveThreshold(blurred, otsu_adap, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, blockSize, (128 - thresh_val) / 10);
+    */
 
     // Canny Edge
     cv::Mat edges;
     cv::Canny(binary, edges, canny_inf, canny_sup);
-
+    
+    int half_height = edges.rows;
+    
+    cv::Rect velocity_roi(0, 0, width, half_height / 3);
+    cv::Rect lanecencter_roi(0, half_height / 3, width, half_height * 2 / 3);
+    
+    cv::Mat roi_v = edges(velocity_roi);
+    cv::Mat roi_c = edges(lanecencter_roi);
+    
     // Hough Transform
-    std::vector<cv::Vec4i> lines;
-    cv::HoughLinesP(edges, lines, 1, CV_PI / 180, hough_threshold, hough_inf_pixel, hough_pixel_gap);
+    std::vector<cv::Vec4i> lines_v;
+    std::vector<cv::Vec4i> lines_c;
+    cv::HoughLinesP(roi_v, lines_v, 1, CV_PI / 180, hough_threshold, hough_inf_pixel, hough_pixel_gap);
+    cv::HoughLinesP(roi_c, lines_c, 1, CV_PI / 180, hough_threshold, hough_inf_pixel, hough_pixel_gap);
 
     // Separate lines
-    auto line_pair = separateLine(lines, slope_threshold);
-    auto left_lines = line_pair.first;
-    auto right_lines = line_pair.second;
+    auto line_pair_v = separateLine(lines_v, slope_threshold);
+    auto left_lines_v = line_pair_v.first;
+    auto right_lines_v = line_pair_v.second;
+    
+    auto line_pair_c = separateLine(lines_c, slope_threshold);
+    auto left_lines_c = line_pair_c.first;
+    auto right_lines_c = line_pair_c.second;
 
     // Weighted Average line detection
-    auto left_avg = weighted_average_line(left_lines);
-    auto right_avg = weighted_average_line(right_lines);
+    auto left_avg_v = weighted_average_line(left_lines_v);
+    auto right_avg_v = weighted_average_line(right_lines_v);
+    
+    auto left_avg_c = weighted_average_line(left_lines_c);
+    auto right_avg_c = weighted_average_line(right_lines_c);
 
-    // lane coordinates
-    int roi_height = roi_frame.rows;
+    // lane center calculate
+    int roi_height = roi_c.rows;
     int y_min = 0;
     int y_max = roi_height;
 
     cv::Point left_pt1, left_pt2, right_pt1, right_pt2;
-    if (!left_lines.empty()) {
-      double left_slope = left_avg.first;
-      double left_intercept = left_avg.second;
+    if (!left_lines_c.empty()) {
+      double left_slope = left_avg_c.first;
+      double left_intercept = left_avg_c.second;
       left_pt1 = cv::Point(static_cast<int>((y_max - left_intercept) / (left_slope + 1e-6)), y_max);
       left_pt2 = cv::Point(static_cast<int>((y_min - left_intercept) / (left_slope + 1e-6)), y_min);
     }
-    if (!right_lines.empty()) {
-      double right_slope = right_avg.first;
-      double right_intercept = right_avg.second;
+    if (!right_lines_c.empty()) {
+      double right_slope = right_avg_c.first;
+      double right_intercept = right_avg_c.second;
       right_pt1 = cv::Point(static_cast<int>((y_max - right_intercept) / (right_slope + 1e-6)), y_max);
       right_pt2 = cv::Point(static_cast<int>((y_min - right_intercept) / (right_slope + 1e-6)), y_min);
     }
 
     int lane_center_x = width / 2; 
-    if (!left_lines.empty() && !right_lines.empty()) {
+    if (!left_lines_c.empty() && !right_lines_c.empty()) {
       lane_center_x = (left_pt1.x + right_pt1.x) / 2;
-    } else if (!left_lines.empty()) {
+    } else if (!left_lines_c.empty()) {
       lane_center_x = left_pt1.x + width / 2;
-    } else if (!right_lines.empty()) {
+    } else if (!right_lines_c.empty()) {
       lane_center_x = right_pt1.x - width / 2;
     }
+    
+    
+    double max_slope = 30.0;
+    
+    //roi_v slope
+    if (!left_lines_v.empty() && !right_lines_v.empty()) {
+      max_slope = 2 / (left_avg_v.first + right_avg_v.first);
+    } else if (!left_lines_v.empty()) {
+      max_slope = std::abs(left_avg_v.first);
+    } else if (!right_lines_v.empty()) {
+      max_slope = std::abs(right_avg_v.first);
+    }
+    
+    
+    RCLCPP_INFO(this->get_logger(), "%0.5f", max_slope);
+    
+    
     
     // Visualization
     
     
     cv::Mat laneVis = frame.clone();
-    int offset_y = roi_rect.y;
+    int offset_y = lanecencter_roi.y + height / 2;
     
-    if (!left_lines.empty()) {
+    if (!left_lines_c.empty()) {
       cv::line(laneVis, cv::Point(left_pt1.x, left_pt1.y + offset_y), cv::Point(left_pt2.x, left_pt2.y + offset_y), cv::Scalar(255, 0, 0), 3);
     }
-    if (!right_lines.empty()) {
+    if (!right_lines_c.empty()) {
       cv::line(laneVis, cv::Point(right_pt1.x, right_pt1.y + offset_y), cv::Point(right_pt2.x, right_pt2.y + offset_y), cv::Scalar(0, 255, 0), 3);
     }
     cv::circle(laneVis, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(255, 0, 0), -1);
@@ -248,8 +280,8 @@ private:
     // Display
     cv::imshow("Lane Detection", laneVis);
     //cv::imshow("Filtered raw", binary);
-    cv::imshow("Otsu + Adap", otsu_adap);
-    cv::imshow("Masked", edges);
+    cv::imshow("roi_c", roi_c);
+    cv::imshow("roi_v", roi_v);
     cv::waitKey(1);
     
     
@@ -262,7 +294,7 @@ private:
     previous_error_ = error;
     double drive_speed = 0.0;
     
-    drive_speed = speed_control(steering);
+    drive_speed = speed_control(max_slope);
 
     // Publish
     auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
