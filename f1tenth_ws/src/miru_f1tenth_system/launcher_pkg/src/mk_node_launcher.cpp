@@ -21,8 +21,8 @@ public:
         // Initialize current_sector as empty to ensure first publish
         current_sector = "";
         
-        // Initialize as sector A
-        publish_sector("A");
+        // Initialize as MISSION_A
+        publish_sector("MISSION_A");
     }
 
 private:
@@ -197,7 +197,7 @@ private:
                 if (b_sector_count >= required_b_sector_count && !in_b_sector && 
                     std::abs(angle_difference - angle_180_threshold) < (10.0 * (M_PI / 180.0))) {
                     in_b_sector = true;
-                    publish_sector("B");
+                    publish_sector("MISSION_B");
                     RCLCPP_INFO(this->get_logger(), "Entered B sector - walls detected with %f degree separation", 
                               angle_difference * (180.0 / M_PI));
                 }
@@ -210,11 +210,11 @@ private:
             // C sector detection logic (transition from B to C)
             if (in_b_sector && !left_wall_detected && !right_wall_detected) {
                 in_b_sector = false;
-                publish_sector("C");
+                publish_sector("MISSION_C");
                 RCLCPP_INFO(this->get_logger(), "Transitioned from B sector to C sector - walls lost");
             } else if (!in_b_sector && !left_wall_detected && !right_wall_detected) {
                 // We're in sector A
-                publish_sector("A");
+                publish_sector("MISSION_A");
             }
         }
     }
