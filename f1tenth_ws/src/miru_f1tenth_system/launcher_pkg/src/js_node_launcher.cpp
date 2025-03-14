@@ -4,7 +4,7 @@
 #include <numeric>
 #include <algorithm>
 #include "sensor_msgs/msg/laser_scan.hpp"
-#include "nav_msgs/msg/odometry.hpp"
+#include "odom_msgs/msg/my_odom.hpp"
 #include "ackermann_msgs/msg/ackermann_drive_stamped.hpp"
 #include "std_msgs/msg/string.hpp"
 
@@ -23,6 +23,11 @@ public:
             lidarscan_topic, 10, 
             std::bind(&NodeLauncher::lidar_callback, this, std::placeholders::_1));
         
+        // Subscribe to odometry for tracking position
+        odom_sub_ = this->create_subscription<odom_msgs::msg::MyOdom>(
+            "/my_odom", 10,
+            std::bind(&NodeLauncher::odom_callback, this, std::placeholders::_1));
+
         // Define the distance thresholds (in meters)
         close_threshold_ = this->declare_parameter("close_threshold", 0.5);      // < 0.5m is close
         medium_threshold_ = this->declare_parameter("medium_threshold", 0.7);    // < 0.7m is medium
@@ -32,16 +37,31 @@ public:
         b_detection_threshold_ = this->declare_parameter("b_detection_threshold", 5);
         c_detection_threshold_ = this->declare_parameter("c_detection_threshold", 10);
         
+        // Define target offset parameters for Mission C
+        target_offset_x_ = this->declare_parameter("target_offset_x", 0.8);  // Forward offset from end of Mission B
+        target_offset_y_ = this->declare_parameter("target_offset_y", 0.5);  // Right offset from end of Mission B
+        
         // Publisher for mission state changes
         mission_publisher_ = this->create_publisher<std_msgs::msg::String>("current_mission", 10);
         
+        // Publisher for transition position using custom odometry message
+        transition_pub_ = this->create_publisher<odom_msgs::msg::MyOdom>("mission_b_end_position", 10);
+        
+        // Parameter change callback
+        param_callback_handle_ = this->add_on_set_parameters_callback(
+            std::bind(&NodeLauncher::onParameterChange, this, std::placeholders::_1));
+        
         RCLCPP_INFO(this->get_logger(), "Starting in Mission A (Camera)");
+        RCLCPP_INFO(this->get_logger(), "Target offsets set to: forward=%.2f, right=%.2f", 
+                    target_offset_x_, target_offset_y_);
     }
 
 private:
     std::string lidarscan_topic = "/scan";
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr subscription_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mission_publisher_;
+    rclcpp::Subscription<odom_msgs::msg::MyOdom>::SharedPtr odom_sub_;
+    rclcpp::Publisher<odom_msgs::msg::MyOdom>::SharedPtr transition_pub_;
     
     double close_threshold_;
     double medium_threshold_;
@@ -51,10 +71,61 @@ private:
     int b_detection_threshold_;
     int c_detection_threshold_;
     
+    // Store current position using custom odometry message
+    odom_msgs::msg::MyOdom current_odom_;
+    
+    double target_offset_x_;
+    double target_offset_y_;
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
+    
+    void odom_callback(const odom_msgs::msg::MyOdom::SharedPtr msg) {
+        current_odom_ = *msg;  // Store the entire message
+    }
+
     void publish_mission_state(const std::string& mission_name) {
         auto message = std_msgs::msg::String();
         message.data = mission_name;
         mission_publisher_->publish(message);
+
+        // If transitioning from B to C, publish the transition position with offsets
+        if (mission_name == "MISSION_C" && current_mission_ == MISSION_B) {
+            auto transition_msg = current_odom_;  // Use the stored custom odometry message
+            transition_msg.header.stamp = this->now();
+            
+            // Calculate target position using current offsets
+            double yaw_rad = current_odom_.yaw * M_PI / 180.0;  // Convert yaw to radians
+            double global_offset_x = target_offset_x_ * std::cos(yaw_rad) - target_offset_y_ * std::sin(yaw_rad);
+            double global_offset_y = target_offset_x_ * std::sin(yaw_rad) + target_offset_y_ * std::cos(yaw_rad);
+            
+            transition_msg.x = current_odom_.x + global_offset_x;
+            transition_msg.y = current_odom_.y + global_offset_y;
+            
+            transition_pub_->publish(transition_msg);
+            RCLCPP_INFO(this->get_logger(), 
+                "Publishing transition: current (%.2f, %.2f, yaw: %.2f) with offset (%.2f, %.2f) -> target (%.2f, %.2f)",
+                current_odom_.x, current_odom_.y, current_odom_.yaw,
+                target_offset_x_, target_offset_y_,
+                transition_msg.x, transition_msg.y);
+        }
+    }
+    
+    rcl_interfaces::msg::SetParametersResult onParameterChange(
+        const std::vector<rclcpp::Parameter>& parameters)
+    {
+        rcl_interfaces::msg::SetParametersResult result;
+        result.successful = true;
+
+        for (const auto& param : parameters) {
+            if (param.get_name() == "target_offset_x") {
+                target_offset_x_ = param.as_double();
+                RCLCPP_INFO(this->get_logger(), "Updated forward offset to: %.2f", target_offset_x_);
+            }
+            else if (param.get_name() == "target_offset_y") {
+                target_offset_y_ = param.as_double();
+                RCLCPP_INFO(this->get_logger(), "Updated right offset to: %.2f", target_offset_y_);
+            }
+        }
+        return result;
     }
     
     void lidar_callback(const sensor_msgs::msg::LaserScan::SharedPtr scan_msg) 

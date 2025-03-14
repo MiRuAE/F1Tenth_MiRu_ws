@@ -15,6 +15,7 @@ find_package(nav_msgs REQUIRED)
 find_package(ackermann_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(odom_msgs REQUIRED)
 
 add_executable(node_launcher src/node_launcher.cpp)
 add_executable(js_node_launcher src/js_node_launcher.cpp)
@@ -43,22 +44,22 @@ target_include_directories(hm_node_launcher PUBLIC
   $<INSTALL_INTERFACE:include>)
 
 ament_target_dependencies(node_launcher
-  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs odom_msgs
 )
 ament_target_dependencies(js_node_launcher
-  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs odom_msgs
 )
 ament_target_dependencies(mk_node_launcher
-  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs odom_msgs
 )
 ament_target_dependencies(sh_node_launcher
-  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs odom_msgs
 )
 ament_target_dependencies(dg_node_launcher
-  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs odom_msgs
 )
 ament_target_dependencies(hm_node_launcher
-  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs odom_msgs
 )
 
 install(TARGETS node_launcher

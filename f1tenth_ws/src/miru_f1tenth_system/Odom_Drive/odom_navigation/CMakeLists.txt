@@ -9,7 +9,8 @@ endif()
 # 필수 패키지 찾기
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-# find_package(nav_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 #find_package(vesc_msgs REQUIRED)
 find_package(odom_msgs REQUIRED)
 find_package(ackermann_msgs REQUIRED)
@@ -20,7 +21,8 @@ find_package(tf2_geometry_msgs REQUIRED)
 add_executable(odom_navigation_node src/odom_navigation_node.cpp)
 ament_target_dependencies(odom_navigation_node 
   rclcpp 
- # vesc_msgs
+  nav_msgs
+  std_msgs
   odom_msgs 
   ackermann_msgs 
   tf2 

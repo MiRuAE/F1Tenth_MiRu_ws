@@ -10,6 +10,8 @@
 #include "odom_msgs/msg/my_odom.hpp"
 #include "ackermann_msgs/msg/ackermann_drive_stamped.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "std_msgs/msg/string.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 
 using std::placeholders::_1;
 
@@ -20,11 +22,22 @@ public:
   : Node("odom_navigation_node"),
     target_set_(false),
     goal_reached_(false),
+    is_active_(false),
     prev_cte_(0.0),
     integral_cte_(0.0),
     prev_speed_error_(0.0),
     integral_speed_error_(0.0)
   {
+    // Mission state subscriber
+    mission_sub_ = this->create_subscription<std_msgs::msg::String>(
+      "current_mission", 10,
+      std::bind(&OdomNavigationNode::mission_callback, this, std::placeholders::_1));
+
+    // Subscribe to transition position from Mission B
+    transition_sub_ = this->create_subscription<odom_msgs::msg::MyOdom>(
+      "mission_b_end_position", 10,
+      std::bind(&OdomNavigationNode::transition_callback, this, std::placeholders::_1));
+
     // 기존 목표 좌표 및 속도 관련 파라미터
     this->declare_parameter<double>("target_x", 0.0);
     this->declare_parameter<double>("target_y", 0.0);
@@ -113,8 +126,64 @@ public:
   }
 
 private:
+  void mission_callback(const std_msgs::msg::String::SharedPtr msg)
+  {
+    bool was_active = is_active_;
+    is_active_ = (msg->data == "MISSION_C");
+    
+    if (is_active_ != was_active) {
+      if (is_active_) {
+        RCLCPP_INFO(this->get_logger(), "Odometry node activated - Mission C");
+      } else {
+        RCLCPP_INFO(this->get_logger(), "Odometry node deactivated");
+      }
+    }
+  }
+
+  void transition_callback(const odom_msgs::msg::MyOdom::SharedPtr msg)
+  {
+    if (!is_active_) return;  // Only process if we're in Mission C
+    
+    // Get the position from the transition message using our custom message format
+    double transition_x = msg->x;
+    double transition_y = msg->y;
+    double transition_yaw = msg->yaw;  // Store the yaw for potential use in navigation
+    
+    // Add offset to the transition position (configurable via parameters)
+    double offset_x = this->declare_parameter("target_offset_x", 0.8);  // Default 0.8m forward
+    double offset_y = this->declare_parameter("target_offset_y", 0.5);  // Default 0.5m to the right
+    
+    // Convert the offset from local coordinates (relative to car) to global coordinates
+    double yaw_rad = transition_yaw * M_PI / 180.0;  // Convert yaw to radians if it's in degrees
+    double global_offset_x = offset_x * std::cos(yaw_rad) - offset_y * std::sin(yaw_rad);
+    double global_offset_y = offset_x * std::sin(yaw_rad) + offset_y * std::cos(yaw_rad);
+    
+    {
+      std::lock_guard<std::mutex> lock(target_mutex_);
+      target_x_ = transition_x + global_offset_x;
+      target_y_ = transition_y + global_offset_y;
+      target_set_ = true;
+      goal_reached_ = false;
+      
+      // Reset PID variables for the new target
+      prev_cte_ = 0.0;
+      integral_cte_ = 0.0;
+      prev_speed_error_ = 0.0;
+      integral_speed_error_ = 0.0;
+      
+      RCLCPP_INFO(this->get_logger(), 
+        "New target set from transition position (%.2f, %.2f, yaw: %.2f) with offset (%.2f, %.2f) -> target: (%.2f, %.2f)", 
+        transition_x, transition_y, transition_yaw,
+        offset_x, offset_y, target_x_, target_y_);
+    }
+  }
+
   void odomCallback(const odom_msgs::msg::MyOdom::SharedPtr msg)
   {
+    if (!is_active_) {
+      return;  // Skip processing if not in Mission C
+    }
+
     std::lock_guard<std::mutex> lock(target_mutex_);
     if (!target_set_) {
       RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Target not set. Waiting for user input...");
@@ -288,6 +357,9 @@ private:
   }
 
   // 멤버 변수
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mission_sub_;
+  rclcpp::Subscription<odom_msgs::msg::MyOdom>::SharedPtr transition_sub_;
+  bool is_active_;
   rclcpp::Subscription<odom_msgs::msg::MyOdom>::SharedPtr odom_sub_;
   rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_pub_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;

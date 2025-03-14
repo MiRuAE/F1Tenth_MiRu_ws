@@ -8,12 +8,18 @@
 #include <vector>
 #include <cmath>
 #include <chrono>
+#include <std_msgs/msg/string.hpp>
 
 class LaneFollowingNode : public rclcpp::Node {
   public:
   LaneFollowingNode()
-  : Node("lane_following_node"), previous_error_(0.0), integral_(0.0)
+  : Node("lane_following_node"), previous_error_(0.0), integral_(0.0), is_active_(false)
   {
+    // Mission state subscriber
+    mission_sub_ = this->create_subscription<std_msgs::msg::String>(
+      "current_mission", 10,
+      std::bind(&LaneFollowingNode::mission_callback, this, std::placeholders::_1));
+
     // Camera parameter
     int camera_index = 0;
     cap_.open(camera_index, cv::CAP_V4L2);
@@ -79,6 +85,19 @@ class LaneFollowingNode : public rclcpp::Node {
 
 
 private:
+  void mission_callback(const std_msgs::msg::String::SharedPtr msg) {
+    bool was_active = is_active_;
+    is_active_ = (msg->data == "MISSION_A");
+    
+    if (is_active_ != was_active) {
+      if (is_active_) {
+        RCLCPP_INFO(this->get_logger(), "Camera node activated - Mission A");
+      } else {
+        RCLCPP_INFO(this->get_logger(), "Camera node deactivated");
+      }
+    }
+  }
+
   double speed_control(double steering_angle) {
     double abs_angle = std::abs(steering_angle);
     double v_max = 1.5;  
@@ -139,7 +158,9 @@ private:
   }
 
   void timer_callback() {
-  
+    if (!is_active_) {
+      return;  // Skip processing if not in Mission A
+    }
     
     cv::Mat frame;
     if (!cap_.read(frame)) {
@@ -276,6 +297,8 @@ private:
     RCLCPP_INFO(this->get_logger(), "Time: %f ms", (end.seconds() - start.seconds()) * 1000);
   }
   // Member variables
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mission_sub_;
+  bool is_active_;
   rclcpp::Time prev_time_;
   rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_pub_;
   rclcpp::TimerBase::SharedPtr timer_;

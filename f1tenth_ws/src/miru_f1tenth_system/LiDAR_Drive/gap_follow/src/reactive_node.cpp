@@ -8,6 +8,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "ackermann_msgs/msg/ackermann_drive_stamped.hpp"
 #include <cmath>
+#include <std_msgs/msg/string.hpp>
 
 /// CHECK: include needed ROS msg type headers and libraries
 
@@ -16,9 +17,15 @@ class ReactiveFollowGap : public rclcpp::Node {
 // This is just a template, you are free to implement your own node!
 
 public:
-    ReactiveFollowGap() : Node("reactive_node")
+    ReactiveFollowGap() : Node("reactive_node"), is_active_(false)
     {
         double servo_min = this->declare_parameter<double>("servo_min", 0.0);
+        
+        // Mission state subscriber
+        mission_sub_ = this->create_subscription<std_msgs::msg::String>(
+            "current_mission", 10,
+            std::bind(&ReactiveFollowGap::mission_callback, this, std::placeholders::_1));
+
         /// TODO: create ROS subscribers and publishers
         // LaserScan 메시지를 구독하여 scan_callback 호출
         scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
@@ -45,6 +52,9 @@ private:
     double right_wing = -(M_PI / 2.7);
     int left_wing_index = 0;
     int right_wing_index = 0;
+
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mission_sub_;
+    bool is_active_;
 
     std::vector<float> preprocess_lidar(std::vector<float>& ranges)
     {   
@@ -219,8 +229,25 @@ private:
         return best_point_index;
     }
 
+    void mission_callback(const std_msgs::msg::String::SharedPtr msg) {
+        bool was_active = is_active_;
+        is_active_ = (msg->data == "MISSION_B");
+        
+        if (is_active_ != was_active) {
+            if (is_active_) {
+                RCLCPP_INFO(this->get_logger(), "LiDAR node activated - Mission B");
+            } else {
+                RCLCPP_INFO(this->get_logger(), "LiDAR node deactivated");
+            }
+        }
+    }
+
     void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr scan_msg) 
     {   
+        if (!is_active_) {
+            return;  // Skip processing if not in Mission B
+        }
+
         if (scan_msg->ranges.empty()) {
             RCLCPP_WARN(this->get_logger(), "Empty scan message received");
             return;
