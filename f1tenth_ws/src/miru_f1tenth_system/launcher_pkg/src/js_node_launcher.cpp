@@ -39,7 +39,7 @@ public:
         
         // Define target offset parameters for Mission C
         target_offset_x_ = this->declare_parameter("target_offset_x", 0.8);  // Forward offset from end of Mission B
-        target_offset_y_ = this->declare_parameter("target_offset_y", 0.5);  // Right offset from end of Mission B
+        target_offset_y_ = this->declare_parameter("target_offset_y", 2.5);  // Right offset from end of Mission B
         
         // Publisher for mission state changes
         mission_publisher_ = this->create_publisher<std_msgs::msg::String>("current_mission", 10);
@@ -54,6 +54,7 @@ public:
         RCLCPP_INFO(this->get_logger(), "Starting in Mission A (Camera)");
         RCLCPP_INFO(this->get_logger(), "Target offsets set to: forward=%.2f, right=%.2f", 
                     target_offset_x_, target_offset_y_);
+        publish_mission_state("MISSION_A");
     }
 
 private:
