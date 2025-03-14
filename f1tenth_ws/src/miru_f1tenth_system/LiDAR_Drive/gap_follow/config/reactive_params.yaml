@@ -1,0 +1,16 @@
+/**:
+  ros__parameters:
+    # 주행 속도 설정
+    speed_fast: 2.0    # 직진 시 속도
+    speed_medium: 1.5  # 약간의 커브
+    speed_slow: 1.2    # 완만한 커브
+    speed_careful: 0.8 # 중간 커브
+
+    # LiDAR 처리 파라미터
+    scan_threshold: 2.5  # LiDAR 스캔 최대 거리
+    window_size: 9      # 평균 필터 윈도우 크기
+    car_width: 0.5      # 차량 너비 (meters)
+
+    # 주행 각도 설정
+    left_wing: 1.16     # 왼쪽 스캔 범위 (rad, π/2.7)
+    right_wing: -1.16   # 오른쪽 스캔 범위 (rad, -π/2.7) 

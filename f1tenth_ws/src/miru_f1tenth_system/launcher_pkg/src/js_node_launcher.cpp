@@ -29,12 +29,12 @@ public:
             std::bind(&NodeLauncher::odom_callback, this, std::placeholders::_1));
 
         // Define the distance thresholds (in meters)
-        close_threshold_ = this->declare_parameter("close_threshold", 0.5);      // < 0.5m is close
-        medium_threshold_ = this->declare_parameter("medium_threshold", 0.7);    // < 0.7m is medium
-                                                                                // >= 0.7m is far
+        close_threshold_ = this->declare_parameter("close_threshold", 0.6);      // Increased from 0.5m to 0.6m
+        medium_threshold_ = this->declare_parameter("medium_threshold", 0.8);    // Increased from 0.7m to 0.8m
+                                                                                // >= 0.8m is far
 
         // Define the threshold for mission transitions
-        b_detection_threshold_ = this->declare_parameter("b_detection_threshold", 5);
+        b_detection_threshold_ = this->declare_parameter("b_detection_threshold", 3);  // Reduced from 5 to 3
         c_detection_threshold_ = this->declare_parameter("c_detection_threshold", 10);
         
         // Define target offset parameters for Mission C
@@ -54,6 +54,9 @@ public:
         RCLCPP_INFO(this->get_logger(), "Starting in Mission A (Camera)");
         RCLCPP_INFO(this->get_logger(), "Target offsets set to: forward=%.2f, right=%.2f", 
                     target_offset_x_, target_offset_y_);
+                    
+        // Publish initial mission state
+        publish_mission_state("MISSION_A");
     }
 
 private:
@@ -255,9 +258,9 @@ private:
                 bool approaching_narrow_passage = false;
                 
                 // Check if we're between walls (high close percentage on both sides)
-                if (left_close_percent > 35.0 && right_close_percent > 35.0) {  // Reduced from 40.0
+                if (left_close_percent > 25.0 && right_close_percent > 25.0) {  // Reduced from 35.0 to 25.0
                     // Also check if there's a clear path forward
-                    if (front_close_percent < 30.0 && front_mean > medium_threshold_) {
+                    if (front_close_percent < 35.0 && front_mean > medium_threshold_ * 0.8) {  // Reduced threshold multiplier
                         narrow_passage_detected = true;
                     }
                 }
@@ -265,9 +268,9 @@ private:
                 // NEW: Early detection of approaching narrow passage
                 if (left_ranges.size() > 10 && right_ranges.size() > 10) {
                     // Check if walls are getting closer on both sides
-                    if ((left_mean < 1.2 && right_mean < 1.2) &&  // Walls are relatively close
-                        (front_mean > medium_threshold_ * 1.2) &&  // Clear path ahead
-                        std::abs(left_mean - right_mean) < 0.4) {  // Roughly symmetric walls
+                    if ((left_mean < 1.5 && right_mean < 1.5) &&  // Increased from 1.2 to 1.5
+                        (front_mean > medium_threshold_) &&        // Reduced requirement
+                        std::abs(left_mean - right_mean) < 0.5) { // Increased from 0.4 to 0.5
                         approaching_narrow_passage = true;
                     }
                 }
