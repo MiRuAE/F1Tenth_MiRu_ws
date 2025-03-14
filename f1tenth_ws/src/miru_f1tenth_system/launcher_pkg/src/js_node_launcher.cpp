@@ -252,12 +252,23 @@ private:
                 
                 // Enhanced transition detection logic
                 bool narrow_passage_detected = false;
+                bool approaching_narrow_passage = false;
                 
                 // Check if we're between walls (high close percentage on both sides)
-                if (left_close_percent > 40.0 && right_close_percent > 40.0) {
+                if (left_close_percent > 35.0 && right_close_percent > 35.0) {  // Reduced from 40.0
                     // Also check if there's a clear path forward
                     if (front_close_percent < 30.0 && front_mean > medium_threshold_) {
                         narrow_passage_detected = true;
+                    }
+                }
+                
+                // NEW: Early detection of approaching narrow passage
+                if (left_ranges.size() > 10 && right_ranges.size() > 10) {
+                    // Check if walls are getting closer on both sides
+                    if ((left_mean < 1.2 && right_mean < 1.2) &&  // Walls are relatively close
+                        (front_mean > medium_threshold_ * 1.2) &&  // Clear path ahead
+                        std::abs(left_mean - right_mean) < 0.4) {  // Roughly symmetric walls
+                        approaching_narrow_passage = true;
                     }
                 }
                 
@@ -282,8 +293,8 @@ private:
                     
                     // If standard deviation is low on both sides and distances are similar,
                     // we're likely between parallel walls
-                    if (left_std_dev < 0.1 && right_std_dev < 0.1 &&
-                        std::abs(left_mean - right_mean) < 0.3) {
+                    if (left_std_dev < 0.15 && right_std_dev < 0.15 &&  // Increased from 0.1
+                        std::abs(left_mean - right_mean) < 0.4) {       // Increased from 0.3
                         parallel_walls = true;
                     }
                 }
@@ -296,11 +307,12 @@ private:
                             right_mean, right_close_percent);
                 
                 // Transition logic with multiple conditions
-                if (narrow_passage_detected || parallel_walls) {
+                if (narrow_passage_detected || parallel_walls || approaching_narrow_passage) {
                     consecutive_b_detections_++;
                     RCLCPP_INFO(this->get_logger(), "Potential Mission B detection (%d/%d) - %s",
                                 consecutive_b_detections_, b_detection_threshold_,
-                                parallel_walls ? "Parallel walls detected" : "Narrow passage detected");
+                                approaching_narrow_passage ? "Approaching narrow passage" :
+                                (parallel_walls ? "Parallel walls detected" : "Narrow passage detected"));
                     
                     if (consecutive_b_detections_ >= b_detection_threshold_) {
                         RCLCPP_INFO(this->get_logger(), "Transitioning: Mission A -> Mission B");
