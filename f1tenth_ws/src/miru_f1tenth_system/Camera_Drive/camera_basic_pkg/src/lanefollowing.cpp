@@ -4,280 +4,302 @@
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/highgui/highgui.hpp>
-#include <opencv2/ximgproc.hpp>
+#include <opencv2/imgproc.hpp>
 #include <vector>
-#include <numeric>
-#include <cstdlib>
-#include <ctime>
 #include <cmath>
-#include <opencv2/video/tracking.hpp>
+#include <chrono>
 
-class LaneFollowerPolyNode : public rclcpp::Node {
-public:
-  LaneFollowerPolyNode()
-  : Node("lane_follower_node"), previous_error_(0.0), integral_(0.0)
+class LaneFollowingNode : public rclcpp::Node {
+  public:
+  LaneFollowingNode()
+  : Node("lane_following_node"), previous_error_(0.0), integral_(0.0)
   {
-    std::srand(static_cast<unsigned int>(std::time(nullptr)));
+    // Camera parameter
+    int camera_index = 0;
+    cap_.open(camera_index, cv::CAP_V4L2);
+    if (!cap_.isOpened()) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to open camera!");
+    }
+    cap_.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
+    cap_.set(cv::CAP_PROP_FRAME_WIDTH, 320);
+    cap_.set(cv::CAP_PROP_FRAME_HEIGHT,180);
+    cap_.set(cv::CAP_PROP_FPS, 30);
+    cap_.set(cv::CAP_PROP_AUTO_EXPOSURE, 1);
+    cap_.set(cv::CAP_PROP_BRIGHTNESS, 128);
+    double width = cap_.get(cv::CAP_PROP_FRAME_WIDTH);
+    double height = cap_.get(cv::CAP_PROP_FRAME_HEIGHT);
+    double fps = cap_.get(cv::CAP_PROP_FPS);
+    std::cout << "Camera settings: " << width << "x" << height << " at " << fps << " fps." << std::endl;
+    // camera attributes
+    //cap_.set(cv::CAP_PROP_FRAME_WIDTH, frame_width);
+    //cap_.set(cv::CAP_PROP_FRAME_HEIGHT, frame_height);
+
+    // Threshold parameters
+    thresh = 100;      // simple threshold
+    blockSize = 11;     // adaptive threshold
+    C = 0;
+
+    // Gaussian blur parameter
+    gaus_blur_size = 5;
+
+    // Canny edge parameters
+    canny_inf = 50;
+    canny_sup = 150;
+
+    // Hough Transform parameters
+    hough_threshold = 50;
+    hough_inf_pixel = 50;
+    hough_pixel_gap = 10;
+
+    // Line detection parameter
+    slope_threshold = 0.3;
 
     // PID parameters
-    this->declare_parameter<double>("Kp", 0.005);
-    this->declare_parameter<double>("Ki", 0.000);
-    this->declare_parameter<double>("Kd", 0.000);
-    this->get_parameter("Kp", Kp_);
-    this->get_parameter("Ki", Ki_);
-    this->get_parameter("Kd", Kd_);
+    Kp = 0.005;
+    Ki = 0.0;
+    Kd = 0.0;
 
-    image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-      "/camera/image", 10,
-      std::bind(&LaneFollowerPolyNode::image_callback, this, std::placeholders::_1));
-
-    drive_pub_ = this->create_publisher<ackermann_msgs::msg::AckermannDriveStamped>(
-      "/drive", 10);
-
-    cv::namedWindow("Lane Tracking", cv::WINDOW_AUTOSIZE);
-    cv::namedWindow("ROI Edges", cv::WINDOW_AUTOSIZE);
-
-    RCLCPP_INFO(this->get_logger(), "LaneFollowerNode has been started.");
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
+    drive_pub_ = this->create_publisher<ackermann_msgs::msg::AckermannDriveStamped>("drive", 10);
+    
+    
+    prev_time_ = this->now();
+    timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(15),
+      std::bind(&LaneFollowingNode::timer_callback, this));
+      cv::namedWindow("Lane Detection", cv::WINDOW_AUTOSIZE);
+      cv::namedWindow("Masked", cv::WINDOW_AUTOSIZE);
+    RCLCPP_INFO(this->get_logger(), "LaneFollowingNode started.");
   }
+  ~LaneFollowingNode() {
+    if (cap_.isOpened())
+      cap_.release();
+    cv::destroyAllWindows();
+  }
+
 
 private:
-
-
-  // polynomal fitting function
-  std::vector<double> polyFit(const std::vector<cv::Point>& points, int degree = 2) {
-  
-    int n = points.size();
-    std::vector<double> coeff;
-    if (n == 0) return coeff;
-    
-    cv::Mat X(n, degree + 1, CV_64F);
-    cv::Mat Y(n, 1, CV_64F);
-    for (int i = 0; i < n; i++) {
-      double y = points[i].y;
-      Y.at<double>(i, 0) = points[i].x;  // x = f(y)
-      for (int j = 0; j < degree + 1; j++) {
-        X.at<double>(i, j) = std::pow(y, degree - j);
-      }
-    }
-    cv::Mat coeffMat;
-    cv::solve(X, Y, coeffMat, cv::DECOMP_SVD);
-    for (int i = 0; i < coeffMat.rows; i++) {
-      coeff.push_back(coeffMat.at<double>(i, 0));
-    }
-    return coeff;  // coeff[0]=A, coeff[1]=B, coeff[2]=C
+  double speed_control(double steering_angle) {
+    double abs_angle = std::abs(steering_angle);
+    double v_max = 1.5;  
+    double v_min = 0.7;  
+    double k = 30.0;     
+    double x0 = 0.2;    
+    double sigmoid = 1.0 / (1.0 + std::exp(k * (abs_angle - x0)));
+    double speed = v_min + (v_max - v_min) * sigmoid;
+    return speed;
   }
 
-
-  // visualizing poly function
-  void lane_visualize(cv::Mat &img, const std::vector<double>& poly, cv::Scalar color, int height) {
-  
-    if(poly.empty()) return;
-    int degree = poly.size() - 1;
-    for (int y = height*2/3; y < height; y++) {
-      double x = 0;
-      for (int j = 0; j < poly.size(); j++) {
-        x += poly[j] * std::pow(y, degree - j);
-      }
-      cv::circle(img, cv::Point(static_cast<int>(x), y), 2, color, -1);
-    }
-  }
-
-  // center of lane
-  int LaneCenter(const std::vector<double>& leftPoly, const std::vector<double>& rightPoly,
-               int y, int min_left_points, int min_right_points,
-               int left_count, int right_count, int lane_width_pixels_) {
-    double left_x = 0, right_x = 0;
-    int degree;
-    bool leftFound = (left_count >= min_left_points);
-    bool rightFound = (right_count >= min_right_points);
-
-    if (leftFound) {
-        degree = static_cast<int>(leftPoly.size()) - 1;
-        for (size_t j = 0; j < leftPoly.size(); j++) {
-            left_x += leftPoly[j] * std::pow(y, degree - j);
+  std::pair<std::vector<cv::Vec4i>, std::vector<cv::Vec4i>>
+    separateLine(const std::vector<cv::Vec4i>& lines, double slope_threshold) {
+      std::vector<cv::Vec4i> left_lines;
+      std::vector<cv::Vec4i> right_lines;
+      for (const auto &line : lines) {
+        int x1 = line[0], y1 = line[1];
+        int x2 = line[2], y2 = line[3];
+        double slope = static_cast<double>(y2 - y1) / (x2 - x1 + 1e-6);
+        if (std::abs(slope) < slope_threshold) {
+          continue;
         }
-    }
-    if (rightFound) {
-        degree = static_cast<int>(rightPoly.size()) - 1;
-        for (size_t j = 0; j < rightPoly.size(); j++) {
-            right_x += rightPoly[j] * std::pow(y, degree - j);
-        }
+        if (slope < 0)
+          left_lines.push_back(line);
+        else
+          right_lines.push_back(line);
+      }
+      return std::make_pair(left_lines, right_lines);
     }
 
-    // If both lanes are found, average them.
-    if (leftFound && rightFound) {
-        return static_cast<int>((left_x + right_x) / 2);
+  std::pair<double, double> weighted_average_line(const std::vector<cv::Vec4i>& lines_vec) {
+    double slope_sum = 0.0;
+    double intercept_sum = 0.0;
+    double length_sum = 0.0;
+
+    for (const auto &l : lines_vec) {
+      double x1 = l[0];
+      double y1 = l[1];
+      double x2 = l[2];
+      double y2 = l[3];
+
+      double slope = (y2 - y1) / (x2 - x1 + 1e-6);
+      double intercept = y1 - slope * x1;
+      double length = std::sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
+
+      slope_sum += slope * length;
+      intercept_sum += intercept * length;
+      length_sum += length;
     }
-    // If only left lane is found, estimate center using lane width.
-    else if (leftFound) {
-        return static_cast<int>(left_x + lane_width_pixels_ / 2.2);
+
+    if (length_sum == 0.0) {
+      return std::make_pair(0.0, 0.0);
     }
-    // If only right lane is found, estimate center using lane width.
-    else if (rightFound) {
-        return static_cast<int>(right_x - lane_width_pixels_ / 2.2);
-    }
-    
-    // If neither lane is found, return an error value.
-    return static_cast<int>(lane_width_pixels_ / 2.0);
+
+    double avg_slope = slope_sum / length_sum;
+    double avg_intercept = intercept_sum / length_sum;
+    return std::make_pair(avg_slope, avg_intercept);
   }
 
-  void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
-  {
-    cv_bridge::CvImagePtr cv_ptr;
-    try {
-      cv_ptr = cv_bridge::toCvCopy(msg, "bgr8");
-    } catch(cv_bridge::Exception &e) {
-      RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
+  void timer_callback() {
+  
+    
+    cv::Mat frame;
+    if (!cap_.read(frame)) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to capture frame!");
       return;
     }
-    cv::Mat frame = cv_ptr->image;
-    int height = frame.rows;
+    
+    rclcpp::Time start = this->now();
     int width = frame.cols;
+    int height = frame.rows;
 
-    // HSV filter
-    cv::Mat hsv;
-    cv::cvtColor(frame, hsv, cv::COLOR_BGR2HLS);
-    cv::Mat mask;
-    
-    // white line
-    //cv::inRange(hsv, cv::Scalar(0, 0, 200), cv::Scalar(180, 30, 255), mask);
-    
-    // yellow line
-    //cv::inRange(hsv, cv::Scalar(20, 50, 120), cv::Scalar(70, 255, 255), mask);
-    
-    // black line
-    cv::inRange(hsv, cv::Scalar(0, 0, 0), cv::Scalar(180, 90, 255), mask);
+    // ROI
+    cv::Rect roi_rect(0, height / 2, width, height / 2);
+    cv::Mat roi_frame = frame(roi_rect);
 
-    // gaussianblur
+    // Grayscale
+    cv::Mat gray;
+    cv::cvtColor(roi_frame, gray, cv::COLOR_BGR2GRAY);
+    
+    cv::Mat inverted;
+    cv::bitwise_not(gray, inverted);
+
+    // Gaussian Blur
     cv::Mat blurred;
-    cv::GaussianBlur(mask, blurred, cv::Size(7, 7), 0);
-
-    // morphology (noise)
-    //cv::Mat morph;
-    //cv::erode(blurred, morph, cv::Mat(), cv::Point(-1,-1), 2);
-    //cv::dilate(morph, morph, cv::Mat(), cv::Point(-1,-1), 1);
-
-    // Canny edge
-    //cv::Mat edges;
-    //cv::Canny(morph, edges, 80, 200);
-
-    // Thinning
-    //cv::Mat thinEdges;
-    //cv::ximgproc::thinning(edges, thinEdges, cv::ximgproc::THINNING_ZHANGSUEN);
+    cv::GaussianBlur(gray, blurred, cv::Size(gaus_blur_size, gaus_blur_size), 0);
     
-     //ROI
-    cv::Rect roi_rect(0, height * 2 / 3, width, height / 3);
-    cv::Mat roi = blurred(roi_rect);
+    // Simple threshold
+    /*
+    cv::Mat binary;
+    cv::threshold(gray, binary, thresh, 255, cv::THRESH_BINARY);
+    */
 
-    // Get non-zero points in ROI
-    std::vector<cv::Point> roiPoints;
-    cv::findNonZero(roi, roiPoints);
-    for(auto &pt : roiPoints) {
-        pt.y += height*2/3;
+    /*
+    // Adaptive threshold
+    cv::Mat binary;
+    cv::adaptiveThreshold(blurred, binary, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, blockSize, C);
+    */
+    
+    // Otsu threshold
+    cv::Mat binary;
+    double thresh_val = cv::threshold(blurred, binary, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    RCLCPP_INFO(this->get_logger(), "%f", thresh_val);
+    
+    cv::Mat otsu_adap;
+    cv::adaptiveThreshold(blurred, otsu_adap, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, blockSize, (128 - thresh_val) / 10);
+
+    // Canny Edge
+    cv::Mat edges;
+    cv::Canny(binary, edges, canny_inf, canny_sup);
+
+    // Hough Transform
+    std::vector<cv::Vec4i> lines;
+    cv::HoughLinesP(edges, lines, 1, CV_PI / 180, hough_threshold, hough_inf_pixel, hough_pixel_gap);
+
+    // Separate lines
+    auto line_pair = separateLine(lines, slope_threshold);
+    auto left_lines = line_pair.first;
+    auto right_lines = line_pair.second;
+
+    // Weighted Average line detection
+    auto left_avg = weighted_average_line(left_lines);
+    auto right_avg = weighted_average_line(right_lines);
+
+    // lane coordinates
+    int roi_height = roi_frame.rows;
+    int y_min = 0;
+    int y_max = roi_height;
+
+    cv::Point left_pt1, left_pt2, right_pt1, right_pt2;
+    if (!left_lines.empty()) {
+      double left_slope = left_avg.first;
+      double left_intercept = left_avg.second;
+      left_pt1 = cv::Point(static_cast<int>((y_max - left_intercept) / (left_slope + 1e-6)), y_max);
+      left_pt2 = cv::Point(static_cast<int>((y_min - left_intercept) / (left_slope + 1e-6)), y_min);
+    }
+    if (!right_lines.empty()) {
+      double right_slope = right_avg.first;
+      double right_intercept = right_avg.second;
+      right_pt1 = cv::Point(static_cast<int>((y_max - right_intercept) / (right_slope + 1e-6)), y_max);
+      right_pt2 = cv::Point(static_cast<int>((y_min - right_intercept) / (right_slope + 1e-6)), y_min);
     }
 
-    // Split points into left and right based on center
-    std::vector<cv::Point> leftPoints, rightPoints;
-    for(const auto &pt : roiPoints) {
-        if(pt.x < width/2)
-            leftPoints.push_back(pt);
-        else
-            rightPoints.push_back(pt);
+    int lane_center_x = width / 2; 
+    if (!left_lines.empty() && !right_lines.empty()) {
+      lane_center_x = (left_pt1.x + right_pt1.x) / 2;
+    } else if (!left_lines.empty()) {
+      lane_center_x = left_pt1.x + width / 2;
+    } else if (!right_lines.empty()) {
+      lane_center_x = right_pt1.x - width / 2;
     }
+    
+    // Visualization
+    
+    
+    cv::Mat laneVis = frame.clone();
+    int offset_y = roi_rect.y;
+    
+    if (!left_lines.empty()) {
+      cv::line(laneVis, cv::Point(left_pt1.x, left_pt1.y + offset_y), cv::Point(left_pt2.x, left_pt2.y + offset_y), cv::Scalar(255, 0, 0), 3);
+    }
+    if (!right_lines.empty()) {
+      cv::line(laneVis, cv::Point(right_pt1.x, right_pt1.y + offset_y), cv::Point(right_pt2.x, right_pt2.y + offset_y), cv::Scalar(0, 255, 0), 3);
+    }
+    cv::circle(laneVis, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(255, 0, 0), -1);
 
-    // Fit a polynomial
-    std::vector<double> leftPoly;
-    std::vector<double> rightPoly;
-    // Get lane center using lane width compensation at the bottom
+    // Display
+    cv::imshow("Lane Detection", laneVis);
+    //cv::imshow("Filtered raw", binary);
+    cv::imshow("Otsu + Adap", otsu_adap);
+    cv::imshow("Masked", edges);
+    cv::waitKey(1);
     
-    int left_threshold = 1000;
-    int right_threshold = 1000;
-    bool leftFound = (leftPoints.size() >= left_threshold);
-    bool rightFound = (rightPoints.size() >= right_threshold);
-    
-    // 시각화 (디버깅용)
-    cv::Mat visFrame = frame.clone();
-    
-    int lane_count = 0;
-    
-    if (leftFound) {
-      leftPoly = polyFit(leftPoints, 1);
-      lane_visualize(visFrame, leftPoly, cv::Scalar(255, 0, 0), height);   // blue for left
-      lane_count += 1;
-    }
-    
-    if (rightFound) {
-      rightPoly = polyFit(rightPoints, 1);
-      lane_visualize(visFrame, rightPoly, cv::Scalar(0, 255, 0), height);  // green for right
-      lane_count += 1;
-    }
-    
-    
-    int lane_center_x = LaneCenter(leftPoly, rightPoly, height - 1, left_threshold, right_threshold, leftPoints.size(), rightPoints.size(), width);
-    
-    
-    if (lane_count == 2) {
-      cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(0, 0, 255), -1);
-    }
-    else if (lane_count == 1) {
-      cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(0, 255, 0), -1);
-    }
-    else {
-      cv::circle(visFrame, cv::Point(lane_center_x, height - 1), 10, cv::Scalar(255, 0, 0), -1);
-    }
     
 
-    // PID control using filtered lane center
+    // PID control
     double error = static_cast<double>(lane_center_x) - (width / 2.0);
     integral_ += error;
     double derivative = error - previous_error_;
-    double steering = -(Kp_ * error + Ki_ * integral_ + Kd_ * derivative) / 3;
+    double steering = -(Kp * error + Ki * integral_ + Kd * derivative) / 3;
     previous_error_ = error;
-    
-    double steering_degree = steering * (180.0 / M_PI);
     double drive_speed = 0.0;
+    
+    drive_speed = speed_control(steering);
 
-    //-------------------- Test Mode -----------------//
-    if (fabs(steering_degree) <= 5.0) { 
-        drive_speed = 1.5;
-    } else if (fabs(steering_degree) <= 8.0) {
-        drive_speed = 1.2;
-    } else if (fabs(steering_degree) <= 11.5) {
-        drive_speed = 1.0;
-    } else if (fabs(steering_degree) <= 15.0) {
-        drive_speed = 0.8;
-    } else {
-        drive_speed = 0.7;
-    }
-
+    // Publish
     auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
     drive_msg.header.stamp = this->now();
     drive_msg.drive.steering_angle = steering;
     drive_msg.drive.speed = drive_speed;
     drive_pub_->publish(drive_msg);
-
-    // visualize
-    //cv::imshow("HSV", mask);
-    cv::imshow("Lane Tracking", visFrame);
-    cv::imshow("ROI Edges", roi);
-    cv::waitKey(1);
     
-
+    
+    rclcpp::Time end = this->now();
+    RCLCPP_INFO(this->get_logger(), "Time: %f ms", (end.seconds() - start.seconds()) * 1000);
   }
-
-  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
+  // Member variables
+  rclcpp::Time prev_time_;
   rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_pub_;
-  double Kp_, Ki_, Kd_;
+  rclcpp::TimerBase::SharedPtr timer_;
+  cv::VideoCapture cap_;
+  double Kp, Ki, Kd;
   double previous_error_;
   double integral_;
+
+  // Parameters
+  int thresh;
+  int blockSize;
+  int C;
+  int gaus_blur_size;
+  int canny_inf, canny_sup;
+  int hough_threshold, hough_inf_pixel, hough_pixel_gap;
+  double slope_threshold;
+  
 };
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<LaneFollowerPolyNode>();
+  auto node = std::make_shared<LaneFollowingNode>();
   rclcpp::spin(node);
   rclcpp::shutdown();
-  cv::destroyAllWindows();
   return 0;
-}
+  }
+
