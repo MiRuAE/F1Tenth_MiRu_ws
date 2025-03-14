@@ -15,8 +15,8 @@ public:
         subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
             lidarscan_topic, 10, std::bind(&NodeLauncher::lidar_callback, this, std::placeholders::_1));
         
-        // Publisher for current sector information
-        sector_publisher_ = this->create_publisher<std_msgs::msg::String>("current_sector", 10);
+        // Publisher for current mission information
+        sector_publisher_ = this->create_publisher<std_msgs::msg::String>("current_mission", 10);
         
         // Initialize current_sector as empty to ensure first publish
         current_sector = "";
