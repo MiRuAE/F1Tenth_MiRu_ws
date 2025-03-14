@@ -23,6 +23,7 @@ public:
     target_set_(false),
     goal_reached_(false),
     is_active_(false),
+    origin_set_(false),
     prev_cte_(0.0),
     integral_cte_(0.0),
     prev_speed_error_(0.0),
@@ -134,8 +135,12 @@ private:
     if (is_active_ != was_active) {
       if (is_active_) {
         RCLCPP_INFO(this->get_logger(), "Odometry node activated - Mission C");
+        // Reset origin tracking when entering Mission C
+        origin_set_ = false;
       } else {
         RCLCPP_INFO(this->get_logger(), "Odometry node deactivated");
+        // Clear origin when leaving Mission C
+        origin_set_ = false;
       }
     }
   }
@@ -180,24 +185,35 @@ private:
 
   void odomCallback(const odom_msgs::msg::MyOdom::SharedPtr msg)
   {
-    if (!is_active_) {
-      return;  // Skip processing if not in Mission C
+    std::lock_guard<std::mutex> lock(target_mutex_);
+    
+    // Set origin position when first entering Mission C
+    if (is_active_ && !origin_set_) {
+      origin_x_ = msg->x;
+      origin_y_ = msg->y;
+      origin_yaw_ = msg->yaw;
+      origin_set_ = true;
+      RCLCPP_INFO(this->get_logger(), "Set origin position for Mission C at (%.2f, %.2f, yaw: %.2f)",
+                  origin_x_, origin_y_, origin_yaw_);
     }
 
-    std::lock_guard<std::mutex> lock(target_mutex_);
     if (!target_set_) {
       RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Target not set. Waiting for user input...");
       return;
     }
 
-    // 현재 위치 및 자세 (라디안 단위)
-    double x = msg->x;
-    double y = msg->y;
+    // Calculate relative position to origin
+    double x_rel = msg->x - origin_x_;
+    double y_rel = msg->y - origin_y_;
     double current_yaw = msg->yaw;
-    
     double current_yaw_rad = current_yaw * M_PI / 180;
 
-    // 목표 좌표와의 거리 계산
+    // Rotate coordinates based on origin yaw to get relative coordinates
+    double origin_yaw_rad = origin_yaw_ * M_PI / 180.0;
+    double x = std::cos(-origin_yaw_rad) * x_rel - std::sin(-origin_yaw_rad) * y_rel;
+    double y = std::sin(-origin_yaw_rad) * x_rel + std::cos(-origin_yaw_rad) * y_rel;
+
+    // 목표 좌표와의 거리 계산 (target_x_, target_y_는 이미 상대 좌표)
     double dx = target_x_ - x;
     double dy = target_y_ - y;
     double distance = std::sqrt(dx * dx + dy * dy);
@@ -213,6 +229,11 @@ private:
       return;
     } else {
       goal_reached_ = false;
+    }
+
+    // Only proceed with calculations and publish drive command if in Mission C
+    if (!is_active_) {
+      return;
     }
 
     // 목표 방향 (라디안)
@@ -396,6 +417,12 @@ private:
 
   std::thread input_thread_;
   std::mutex target_mutex_;
+
+  // Add new member variables for origin tracking
+  bool origin_set_;
+  double origin_x_;
+  double origin_y_;
+  double origin_yaw_;
 };
 
 int main(int argc, char ** argv)

@@ -155,10 +155,6 @@ private:
   }
 
   void timer_callback() {
-    if (!is_active_) {
-      return;  // Skip processing if not in Mission A
-    }
-    
     cv::Mat frame;
     if (!cap_.read(frame)) {
       RCLCPP_ERROR(this->get_logger(), "Failed to capture frame!");
@@ -286,7 +282,6 @@ private:
     
     // Visualization
     
-    
     cv::Mat laneVis = frame.clone();
     int offset_y = lanecencter_roi.y + height / 2;
     
@@ -305,8 +300,6 @@ private:
     cv::imshow("roi_v", roi_v);
     cv::waitKey(1);
     
-    
-
     // PID control
     double error = static_cast<double>(lane_center_x) - (width / 2.0);
     integral_ += error;
@@ -317,13 +310,14 @@ private:
     
     drive_speed = speed_control(max_slope);
 
-    // Publish
-    auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
-    drive_msg.header.stamp = this->now();
-    drive_msg.drive.steering_angle = steering;
-    drive_msg.drive.speed = drive_speed;
-    drive_pub_->publish(drive_msg);
-    
+    // Only publish drive command if in sector A
+    if (is_active_) {
+      auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
+      drive_msg.header.stamp = this->now();
+      drive_msg.drive.steering_angle = steering;
+      drive_msg.drive.speed = drive_speed;
+      drive_pub_->publish(drive_msg);
+    }
     
     rclcpp::Time end = this->now();
     RCLCPP_INFO(this->get_logger(), "Time: %f ms", (end.seconds() - start.seconds()) * 1000);

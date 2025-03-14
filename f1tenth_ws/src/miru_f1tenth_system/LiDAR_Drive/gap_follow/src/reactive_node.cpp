@@ -244,21 +244,16 @@ private:
 
     void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr scan_msg) 
     {   
-        if (!is_active_) {
-            return;  // Skip processing if not in Mission B
-        }
-
         if (scan_msg->ranges.empty()) {
             RCLCPP_WARN(this->get_logger(), "Empty scan message received");
             return;
         }
 
-        // Process each LiDAR scan as per the Follow Gap algorithm & publish an AckermannDriveStamped Message
+        // Process LiDAR data and calculate control values regardless of active state
         std::vector<float> processed_ranges(scan_msg->ranges.begin(), scan_msg->ranges.end());
         processed_ranges = preprocess_lidar(scan_msg->ranges);
         double min_range = 100.0;
         int min_index = 0;
-
 
         /// TODO:
         // Find closest point to LiDAR
@@ -269,6 +264,7 @@ private:
             min_index = i;
           }
         }
+
         // Eliminate all points inside 'bubble' (set them to zero) 
         double car_width = 0.5;
         double car_radius = car_width;
@@ -281,9 +277,6 @@ private:
         int best_point_index = find_max_gap(processed_ranges, min_index, bubble_point_num);
         
         // Publish Drive message
-        
-        auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
-        // TODO: fill in drive message and publish
         double steering_angle = scan_msg->angle_min + (scan_msg->angle_increment * best_point_index);
         double drive_speed = 0.0;
         double steering_degree = std::abs(steering_angle * 180 / M_PI);
@@ -356,12 +349,14 @@ private:
         left_wing_index = (left_wing - scan_msg->angle_min) / scan_msg->angle_increment;
         right_wing_index = (right_wing - scan_msg->angle_min) / scan_msg->angle_increment;
 
-
-        drive_msg.drive.steering_angle = pure_pursuit_steer;
-        drive_msg.drive.speed = drive_speed;
-        
-        drive_pub_->publish(drive_msg);
-
+        // Only publish drive command if in sector B
+        if (is_active_) {
+            auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
+            drive_msg.header.stamp = rclcpp::Clock().now();
+            drive_msg.drive.steering_angle = pure_pursuit_steer;
+            drive_msg.drive.speed = drive_speed;
+            drive_pub_->publish(drive_msg);
+        }
     }
 
 };

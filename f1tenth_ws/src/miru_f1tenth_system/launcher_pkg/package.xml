@@ -4,27 +4,27 @@
   <name>launcher_pkg</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="root@todo.todo">root</maintainer>
-  <license>Apache-2.0</license>
+  <maintainer email="todo@todo.com">todo</maintainer>
+  <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <exec_depend>ros2launch</exec_depend>
 
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
-  <depend>ackermann_msgs</depend>
-  <depend>geometry_msgs</depend>
-  <depend>odom_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>ackermann_msgs</depend>
+  
+  <!-- Launch-related dependencies -->
+  <exec_depend>ros2launch</exec_depend>
+  <exec_depend>camera_basic_pkg</exec_depend>
+  <exec_depend>gap_follow</exec_depend>
+  <exec_depend>odom_publisher</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
-    <launch>
-     <launch_file>test_launch.xml</launch_file>
-    </launch>
   </export>
 </package>
