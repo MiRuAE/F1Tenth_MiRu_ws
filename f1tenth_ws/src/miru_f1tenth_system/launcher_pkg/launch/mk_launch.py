@@ -1,20 +1,20 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node, ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
-from launch.substitutions import FindPackageShare
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
+from ament_index_python.packages import get_package_share_directory
 import os
 
 def generate_launch_description():
+    # Get the path to the parameter file
+    f1tenth_stack_dir = get_package_share_directory('f1tenth_stack')
+    default_param_file = os.path.join(f1tenth_stack_dir, 'config', 'vesc.yaml')
+
     # Declare the parameter file argument
     param_file_arg = DeclareLaunchArgument(
         'param_file',
-        default_value=os.path.join(
-            FindPackageShare('f1tenth_stack').find('f1tenth_stack'),
-            'config',
-            'vesc.yaml'
-        ),
+        default_value=default_param_file,
         description='Path to the VESC parameter file'
     )
 
