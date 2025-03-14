@@ -21,7 +21,7 @@ class LaneFollowingNode : public rclcpp::Node {
       std::bind(&LaneFollowingNode::mission_callback, this, std::placeholders::_1));
       
     // Camera parameter
-    int camera_index = 1;
+    int camera_index = 0;
     cap_.open(camera_index, cv::CAP_V4L2);
     if (!cap_.isOpened()) {
       RCLCPP_ERROR(this->get_logger(), "Failed to open camera!");

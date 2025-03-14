@@ -18,6 +18,9 @@ public:
         // Publisher for current sector information
         sector_publisher_ = this->create_publisher<std_msgs::msg::String>("current_sector", 10);
         
+        // Initialize current_sector as empty to ensure first publish
+        current_sector = "";
+        
         // Initialize as sector A
         publish_sector("A");
     }
@@ -35,7 +38,7 @@ private:
     bool in_b_sector = false;  // Track if we're currently in B sector
     int b_sector_count = 0;    // Counter to ensure stable B sector detection
     int required_b_sector_count = 5;  // Number of consecutive B sector detections required
-    std::string current_sector = "A";  // Track current sector
+    std::string current_sector = "";
 
     std::vector<float> preprocess_lidar(std::vector<float>& ranges)
     {   
