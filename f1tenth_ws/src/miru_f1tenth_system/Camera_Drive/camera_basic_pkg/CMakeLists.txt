@@ -23,6 +23,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(ackermann_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 # uncomment the following section in order to fill in
 # further dependencies manually.

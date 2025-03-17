@@ -13,6 +13,8 @@
   <depend>cv_bridge</depend>
   <depend>sensor_msgs</depend>
   <depend>ackermann_msgs</depend>
+  <depend>visualization_msgs</depend>
+
   <!--depend>Opencv</depend-->
 
   <test_depend>ament_lint_auto</test_depend>
