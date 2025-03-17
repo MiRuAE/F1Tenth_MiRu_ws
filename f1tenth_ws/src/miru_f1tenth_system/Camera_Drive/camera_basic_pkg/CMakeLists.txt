@@ -32,7 +32,7 @@ find_package(visualization_msgs REQUIRED)
 #Build
 add_executable(lanefollowing src/lanefollowing.cpp)
 target_include_directories(lanefollowing PUBLIC ${CMAKE_SOURCE_DIR}/include/${PROJECT_NAME})
-ament_target_dependencies(lanefollowing rclcpp cv_bridge sensor_msgs geometry_msgs OpenCV ackermann_msgs)
+ament_target_dependencies(lanefollowing rclcpp cv_bridge sensor_msgs geometry_msgs OpenCV ackermann_msgs visualization_msgs)
 
 #Install
 install(TARGETS
