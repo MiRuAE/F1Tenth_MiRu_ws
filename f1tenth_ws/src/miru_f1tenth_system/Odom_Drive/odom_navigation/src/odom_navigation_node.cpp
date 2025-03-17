@@ -134,11 +134,11 @@ private:
     
     if (is_active_ != was_active) {
       if (is_active_) {
-        RCLCPP_INFO(this->get_logger(), "Odometry node activated - Mission C");
+        RCLCPP_INFO(this->get_logger(), "Odom navigation node activated - Mission C");
         // Reset origin tracking when entering Mission C
         origin_set_ = false;
       } else {
-        RCLCPP_INFO(this->get_logger(), "Odometry node deactivated");
+        RCLCPP_INFO(this->get_logger(), "Odom navigation node deactivated");
         // Clear origin when leaving Mission C
         origin_set_ = false;
       }
@@ -149,10 +149,10 @@ private:
   {
     if (!is_active_) return;  // Only process if we're in Mission C
     
-    // Get the position from the transition message using our custom message format
+    // Get the position and yaw from the transition message (B sector's last position)
     double transition_x = msg->x;
     double transition_y = msg->y;
-    double transition_yaw = msg->yaw;  // Store the yaw for potential use in navigation
+    double transition_yaw = msg->yaw;  // This is both B sector's last yaw and C sector's first yaw
     
     // Add offset to the transition position (configurable via parameters)
     double offset_x = this->declare_parameter("target_offset_x", 0.8);  // Default 0.8m forward
@@ -160,13 +160,20 @@ private:
     
     // Convert the offset from local coordinates (relative to car) to global coordinates
     double yaw_rad = transition_yaw * M_PI / 180.0;  // Convert yaw to radians if it's in degrees
-    double global_offset_x = offset_x * std::cos(yaw_rad) - offset_y * std::sin(yaw_rad);
-    double global_offset_y = offset_x * std::sin(yaw_rad) + offset_y * std::cos(yaw_rad);
+    
+    // Rotate the offset vector by the transition yaw
+    // This ensures the target is set relative to the car's orientation at the transition point
+    double rotated_offset_x = offset_x * std::cos(yaw_rad) - offset_y * std::sin(yaw_rad);
+    double rotated_offset_y = offset_x * std::sin(yaw_rad) + offset_y * std::cos(yaw_rad);
+    
+    // Calculate the final target position in global coordinates
+    double global_target_x = transition_x + rotated_offset_x;
+    double global_target_y = transition_y + rotated_offset_y;
     
     {
       std::lock_guard<std::mutex> lock(target_mutex_);
-      target_x_ = transition_x + global_offset_x;
-      target_y_ = transition_y + global_offset_y;
+      target_x_ = global_target_x;
+      target_y_ = global_target_y;
       target_set_ = true;
       goal_reached_ = false;
       
@@ -229,11 +236,6 @@ private:
       return;
     } else {
       goal_reached_ = false;
-    }
-
-    // Only proceed with calculations and publish drive command if in Mission C
-    if (!is_active_) {
-      return;
     }
 
     // 목표 방향 (라디안)
@@ -302,12 +304,14 @@ private:
       speed_cmd = min_speed_;
     }
 
-    // AckermannDriveStamped 메시지 생성 및 퍼블리시
-    auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
-    drive_msg.header.stamp = this->get_clock()->now();
-    drive_msg.drive.speed = speed_cmd;
-    drive_msg.drive.steering_angle = steering_cmd_rad;
-    drive_pub_->publish(drive_msg);
+    // Only publish drive command if in Mission C
+    if (is_active_) {
+      auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
+      drive_msg.header.stamp = this->get_clock()->now();
+      drive_msg.drive.speed = speed_cmd;
+      drive_msg.drive.steering_angle = steering_cmd_rad;
+      drive_pub_->publish(drive_msg);
+    }
   }
 
   void stopVehicle()

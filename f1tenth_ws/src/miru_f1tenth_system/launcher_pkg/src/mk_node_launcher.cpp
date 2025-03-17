@@ -36,6 +36,7 @@ private:
     int lidar_center = 540;
     int data_size = 0; // Added data_size declaration
     bool in_b_sector = false;  // Track if we're currently in B sector
+    bool in_c_sector = false;  // Track if we're currently in C sector
     int b_sector_count = 0;    // Counter to ensure stable B sector detection
     int required_b_sector_count = 5;  // Number of consecutive B sector detections required
     std::string current_sector = "";
@@ -209,10 +210,17 @@ private:
             
             // C sector detection logic (transition from B to C)
             if (in_b_sector && !left_wall_detected && !right_wall_detected) {
-                in_b_sector = false;
-                publish_sector("MISSION_C");
-                RCLCPP_INFO(this->get_logger(), "Transitioned from B sector to C sector - walls lost");
-            } else if (!in_b_sector && !left_wall_detected && !right_wall_detected) {
+                double angle_180_threshold = 180.0 * (M_PI / 180.0);
+                double angle_difference = std::abs(left_min_index - right_min_index) * scan_msg->angle_increment;
+                
+                if (angle_difference > angle_180_threshold) {
+                    in_b_sector = false;
+                    in_c_sector = true;
+                    publish_sector("MISSION_C");
+                    RCLCPP_INFO(this->get_logger(), "Transitioned from B sector to C sector - walls lost with %f degree separation", 
+                              angle_difference * (180.0 / M_PI));
+                }
+            } else if (!in_b_sector && !in_c_sector && !left_wall_detected && !right_wall_detected) {
                 // We're in sector A
                 publish_sector("MISSION_A");
             }

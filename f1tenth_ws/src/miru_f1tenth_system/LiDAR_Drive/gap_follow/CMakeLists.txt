@@ -20,7 +20,9 @@ foreach(PACKAGE
   nav_msgs
   ackermann_msgs
   sensor_msgs
-  std_msgs)
+  std_msgs
+  visualization_msgs
+  )
 
   find_package(${PACKAGE} REQUIRED)
 
@@ -34,7 +36,7 @@ add_executable(reactive_node src/reactive_node.cpp)
 add_executable(disparity_node src/disparity_node.cpp)
 
 ament_target_dependencies(reactive_node 
-  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs
+  rclcpp geometry_msgs ackermann_msgs nav_msgs sensor_msgs std_msgs visualization_msgs
 )
 
 ament_target_dependencies(disparity_node

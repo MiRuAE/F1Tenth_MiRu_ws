@@ -9,6 +9,8 @@
 #include "ackermann_msgs/msg/ackermann_drive_stamped.hpp"
 #include <cmath>
 #include <std_msgs/msg/string.hpp>
+#include "visualization_msgs/msg/marker.hpp"
+#include "nav_msgs/msg/path.hpp"
 
 /// CHECK: include needed ROS msg type headers and libraries
 
@@ -37,6 +39,10 @@ public:
 
         // AckermannDriveStamped 메시지를 발행하는 퍼블리셔 생성
         drive_pub_ = this->create_publisher<ackermann_msgs::msg::AckermannDriveStamped>("/drive", 10);
+
+        // rviz 시각화를 위한 퍼블리셔 생성
+        marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("lookahead_marker", 10);
+        path_pub_ = this->create_publisher<nav_msgs::msg::Path>("lookahead_path", 10);
     }
 
 private:
@@ -46,6 +52,11 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_pub_;
+
+    // rviz 퍼블리셔
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
+
 
     int data_size = 0;
     double left_wing = M_PI / 2.7;
@@ -348,6 +359,52 @@ private:
         
         left_wing_index = (left_wing - scan_msg->angle_min) / scan_msg->angle_increment;
         right_wing_index = (right_wing - scan_msg->angle_min) / scan_msg->angle_increment;
+
+        // --- rviz 시각화를 위한 Marker 메시지 생성 ---
+        visualization_msgs::msg::Marker marker;
+        marker.header.frame_id = "laser";  // 좌표계. 필요시 "laser" 또는 "odom" 등으로 변경
+        marker.header.stamp = this->now();
+        marker.ns = "lookahead";
+        marker.id = 0;
+        marker.type = visualization_msgs::msg::Marker::SPHERE;
+        marker.action = visualization_msgs::msg::Marker::ADD;
+        marker.pose.position.x = bestpoint_x;
+        marker.pose.position.y = bestpoint_y;
+        marker.pose.position.z = 0.0;
+        marker.pose.orientation.w = 1.0;
+        marker.scale.x = 0.2;
+        marker.scale.y = 0.2;
+        marker.scale.z = 0.2;
+        marker.color.a = 1.0;
+        marker.color.r = 1.0;
+        marker.color.g = 0.0;
+        marker.color.b = 0.0;
+        marker_pub_->publish(marker);
+
+        // --- rviz 시각화를 위한 Path 메시지 생성 ---
+        nav_msgs::msg::Path path_msg;
+        path_msg.header.frame_id = "laser";
+        path_msg.header.stamp = this->now();
+
+        // 시작점: 현재 위치를 (0,0)으로 가정 (필요시 odom 데이터를 사용)
+        geometry_msgs::msg::PoseStamped start_pose;
+        start_pose.header = path_msg.header;
+        start_pose.pose.position.x = 0.0;
+        start_pose.pose.position.y = 0.0;
+        start_pose.pose.position.z = 0.0;
+        start_pose.pose.orientation.w = 1.0;
+
+        // 목표점: Lookahead 포인트
+        geometry_msgs::msg::PoseStamped goal_pose;
+        goal_pose.header = path_msg.header;
+        goal_pose.pose.position.x = bestpoint_x;
+        goal_pose.pose.position.y = bestpoint_y;
+        goal_pose.pose.position.z = 0.0;
+        goal_pose.pose.orientation.w = 1.0;
+
+        path_msg.poses.push_back(start_pose);
+        path_msg.poses.push_back(goal_pose);
+        path_pub_->publish(path_msg);
 
         // Only publish drive command if in sector B
         if (is_active_) {
