@@ -1,0 +1,27 @@
+/**:
+  ros__parameters:
+    # 차량 기본 파라미터
+    wheelbase: 0.32          # 차량 휠베이스 (meters)
+    servo_min: 0.3175        # 서보 최소값
+    servo_max: 0.8405        # 서보 최대값
+    steering_angle_to_servo_gain: -1.2135
+    steering_angle_to_servo_offset: 0.5650
+
+    # Pure Pursuit 파라미터
+    lookahead_distance: 0.5  # Lookahead 거리 (meters)
+    goal_tolerance: 0.05     # 목표 도달 허용 오차 (meters)
+
+    # 속도 제어 파라미터
+    max_speed: 2.5          # 최대 속도
+    min_speed: 0.5          # 최소 속도
+    decel_distance: 0.5     # 감속 시작 거리 (meters)
+
+    # Steering PID 제어
+    kp_pid: 0.0
+    ki_pid: 0.0
+    kd_pid: 0.0
+
+    # 속도 PID 제어
+    kp_speed_pid: 0.5
+    ki_speed_pid: 0.0
+    kd_speed_pid: 0.0 

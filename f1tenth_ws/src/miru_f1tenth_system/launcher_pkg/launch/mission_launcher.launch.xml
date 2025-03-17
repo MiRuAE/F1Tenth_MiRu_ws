@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Load parameter files -->
+    <arg name="launcher_params" default="$(find-pkg-share launcher_pkg)/config/node_launcher_params.yaml"/>
+    <arg name="gap_follow_params" default="$(find-pkg-share gap_follow)/config/reactive_params.yaml"/>
+    <arg name="odom_nav_params" default="$(find-pkg-share odom_navigation)/config/odom_nav_params.yaml"/>
+
+    <!-- Node Launcher -->
+    <node pkg="launcher_pkg" exec="js_node_launcher" name="js_node_launcher" output="screen">
+        <param from="$(var launcher_params)"/>
+    </node>
+
+    <!-- Gap Follow Node -->
+    <node pkg="gap_follow" exec="reactive_node" name="reactive_node" output="screen">
+        <param from="$(var gap_follow_params)"/>
+    </node>
+
+    <!-- Odometry Navigation Node -->
+    <node pkg="odom_navigation" exec="odom_navigation_node" name="odom_navigation_node" output="screen">
+        <param from="$(var odom_nav_params)"/>
+    </node>
+</launch> 

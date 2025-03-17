@@ -1,0 +1,8 @@
+/**:
+  ros__parameters:
+    close_threshold: 0.6       # 가까운 거리 임계값 (meters)
+    medium_threshold: 0.8      # 중간 거리 임계값 (meters)
+    b_detection_threshold: 3   # B 미션 전환을 위한 연속 감지 횟수
+    c_detection_threshold: 10  # C 미션 전환을 위한 연속 감지 횟수
+    target_offset_x: 0.8      # C 미션 목표점의 전방 오프셋 (meters)
+    target_offset_y: 0.5      # C 미션 목표점의 좌측 오프셋 (meters) 
