@@ -9,6 +9,7 @@
 #include <cmath>
 #include <chrono>
 #include <std_msgs/msg/string.hpp>
+#include "visualization_msgs/msg/marker.hpp"
 
 class LaneFollowingNode : public rclcpp::Node {
   public:
@@ -68,6 +69,8 @@ class LaneFollowingNode : public rclcpp::Node {
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
     drive_pub_ = this->create_publisher<ackermann_msgs::msg::AckermannDriveStamped>("drive", 10);
     
+    // Add marker publisher for rviz visualization
+    marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("lane_center_marker", 10);
     
     prev_time_ = this->now();
     timer_ = this->create_wall_timer(
@@ -319,6 +322,39 @@ private:
       drive_pub_->publish(drive_msg);
     }
     
+    // Publish lane center marker for rviz visualization
+    visualization_msgs::msg::Marker marker;
+    marker.header.frame_id = "base_link";  // or appropriate frame
+    marker.header.stamp = this->now();
+    marker.ns = "lane_center";
+    marker.id = 0;
+    marker.type = visualization_msgs::msg::Marker::SPHERE;
+    marker.action = visualization_msgs::msg::Marker::ADD;
+    
+    // Convert pixel coordinates to 3D space (assuming camera is mounted at height h and looking down)
+    double camera_height = 0.5;  // Adjust this value based on your camera mounting height
+    double pixel_to_meter = 0.001;  // Adjust this value based on your camera calibration
+    
+    // Calculate x, y coordinates in meters (assuming camera is looking straight down)
+    double x = (lane_center_x - width/2) * pixel_to_meter;
+    double y = 0.5;  // Fixed distance in front of the car
+    
+    marker.pose.position.x = x;
+    marker.pose.position.y = y;
+    marker.pose.position.z = 0.0;
+    marker.pose.orientation.w = 1.0;
+    
+    marker.scale.x = 0.1;  // 10cm diameter
+    marker.scale.y = 0.1;
+    marker.scale.z = 0.1;
+    
+    marker.color.a = 1.0;
+    marker.color.r = 1.0;
+    marker.color.g = 0.0;
+    marker.color.b = 0.0;
+    
+    marker_pub_->publish(marker);
+
     rclcpp::Time end = this->now();
     RCLCPP_INFO(this->get_logger(), "Time: %f ms", (end.seconds() - start.seconds()) * 1000);
   }
@@ -342,6 +378,8 @@ private:
   int hough_threshold, hough_inf_pixel, hough_pixel_gap;
   double slope_threshold;
   
+  // Add marker publisher to member variables
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
 };
 
 int main(int argc, char **argv) {
