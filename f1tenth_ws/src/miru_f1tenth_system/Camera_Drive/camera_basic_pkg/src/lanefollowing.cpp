@@ -324,20 +324,19 @@ private:
     
     // Publish lane center marker for rviz visualization
     visualization_msgs::msg::Marker marker;
-    marker.header.frame_id = "base_link";  // or appropriate frame
+    marker.header.frame_id = "base_link";  // base_link 프레임 사용
     marker.header.stamp = this->now();
     marker.ns = "lane_center";
     marker.id = 0;
     marker.type = visualization_msgs::msg::Marker::SPHERE;
     marker.action = visualization_msgs::msg::Marker::ADD;
     
-    // Convert pixel coordinates to 3D space (assuming camera is mounted at height h and looking down)
-    double camera_height = 0.5;  // Adjust this value based on your camera mounting height
-    double pixel_to_meter = 0.001;  // Adjust this value based on your camera calibration
+    // Convert pixel coordinates to 3D space
+    double pixel_to_meter = 0.001;  // 픽셀을 미터로 변환하는 스케일
     
-    // Calculate x, y coordinates in meters (assuming camera is looking straight down)
-    double x = (lane_center_x - width/2) * pixel_to_meter;
-    double y = 0.5;  // Fixed distance in front of the car
+    // Calculate x, y coordinates in meters
+    double x = (lane_center_x - width/2) * pixel_to_meter;  // 중앙에서의 오프셋
+    double y = 0.5;  // 차량 앞쪽 0.5m 지점
     
     marker.pose.position.x = x;
     marker.pose.position.y = y;

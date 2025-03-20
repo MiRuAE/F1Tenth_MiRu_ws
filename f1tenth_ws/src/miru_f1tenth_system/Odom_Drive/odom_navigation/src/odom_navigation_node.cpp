@@ -12,6 +12,7 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "visualization_msgs/msg/marker.hpp"
 
 using std::placeholders::_1;
 
@@ -114,6 +115,9 @@ public:
 
     // 로그 출력
     RCLCPP_INFO(this->get_logger(), "PID 초기값: Kp = %f, Ki = %f, Kd = %f", kp_pid_, ki_pid_, kd_pid_);
+
+    // Add marker publisher for lane center visualization
+    marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("odom_target_marker", 10);
   }
 
   ~OdomNavigationNode() override
@@ -308,6 +312,32 @@ private:
       speed_cmd = min_speed_;
     }
 
+    // Publish lane center marker
+    visualization_msgs::msg::Marker marker;
+    marker.header.frame_id = "base_link";
+    marker.header.stamp = this->get_clock()->now();
+    marker.ns = "odom_target";
+    marker.id = 0;
+    marker.type = visualization_msgs::msg::Marker::SPHERE;
+    marker.action = visualization_msgs::msg::Marker::ADD;
+    
+    // Convert relative coordinates to 3D space
+    marker.pose.position.x = transformed_x;
+    marker.pose.position.y = transformed_y;
+    marker.pose.position.z = 0.0;
+    marker.pose.orientation.w = 1.0;
+    
+    marker.scale.x = 0.1;  // 10cm diameter
+    marker.scale.y = 0.1;
+    marker.scale.z = 0.1;
+    
+    marker.color.a = 1.0;
+    marker.color.r = 0.0;  // Changed to blue for target point
+    marker.color.g = 0.0;
+    marker.color.b = 1.0;
+    
+    marker_pub_->publish(marker);
+
     // Only publish drive command if in Mission C
     if (is_active_) {
       auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
@@ -431,6 +461,9 @@ private:
   double origin_x_;
   double origin_y_;
   double origin_yaw_;
+
+  // Add marker publisher to member variables
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
 };
 
 int main(int argc, char ** argv)
