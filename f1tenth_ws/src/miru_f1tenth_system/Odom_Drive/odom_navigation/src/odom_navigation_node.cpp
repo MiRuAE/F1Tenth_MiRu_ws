@@ -166,22 +166,11 @@ private:
     double offset_x = this->declare_parameter("target_offset_x", 0.8);  // Default 0.8m forward
     double offset_y = this->declare_parameter("target_offset_y", 0.5);  // Default 0.5m to the right
     
-    // Convert the offset from local coordinates (relative to car) to global coordinates
-    double yaw_rad = transition_yaw * M_PI / 180.0;  // Convert yaw to radians if it's in degrees
-    
-    // Rotate the offset vector by the transition yaw
-    // This ensures the target is set relative to the car's orientation at the transition point
-    double rotated_offset_x = offset_x * std::cos(yaw_rad) - offset_y * std::sin(yaw_rad);
-    double rotated_offset_y = offset_x * std::sin(yaw_rad) + offset_y * std::cos(yaw_rad);
-    
-    // Calculate the final target position in global coordinates
-    double global_target_x = transition_x + rotated_offset_x;
-    double global_target_y = transition_y + rotated_offset_y;
-    
     {
       std::lock_guard<std::mutex> lock(target_mutex_);
-      target_x_ = global_target_x;
-      target_y_ = global_target_y;
+      // Store target coordinates directly as offsets (relative to transition point)
+      target_x_ = offset_x;
+      target_y_ = offset_y;
       target_set_ = true;
       goal_reached_ = false;
       
@@ -192,9 +181,8 @@ private:
       integral_speed_error_ = 0.0;
       
       RCLCPP_INFO(this->get_logger(), 
-        "New target set from transition position (%.2f, %.2f, yaw: %.2f) with offset (%.2f, %.2f) -> target: (%.2f, %.2f)", 
-        transition_x, transition_y, transition_yaw,
-        offset_x, offset_y, target_x_, target_y_);
+        "New target set with offset (%.2f, %.2f) from transition point", 
+        offset_x, offset_y);
     }
   }
 
