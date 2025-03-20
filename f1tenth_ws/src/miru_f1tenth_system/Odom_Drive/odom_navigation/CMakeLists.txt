@@ -16,6 +16,7 @@ find_package(odom_msgs REQUIRED)
 find_package(ackermann_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 # 실행 파일 생성 (소스 파일은 src/odom_node.cpp)
 add_executable(odom_navigation_node src/odom_navigation_node.cpp)
@@ -27,6 +28,7 @@ ament_target_dependencies(odom_navigation_node
   ackermann_msgs 
   tf2 
   tf2_geometry_msgs
+  visualization_msgs
 )
 
 # 설치 설정: 실행 파일을 lib/<패키지명>에 설치
