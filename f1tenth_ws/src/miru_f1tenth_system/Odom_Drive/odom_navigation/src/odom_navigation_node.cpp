@@ -35,14 +35,9 @@ public:
       "current_mission", 10,
       std::bind(&OdomNavigationNode::mission_callback, this, std::placeholders::_1));
 
-    // Subscribe to transition position from Mission B
-    transition_sub_ = this->create_subscription<odom_msgs::msg::MyOdom>(
-      "mission_b_end_position", 10,
-      std::bind(&OdomNavigationNode::transition_callback, this, std::placeholders::_1));
-
     // 기존 목표 좌표 및 속도 관련 파라미터
-    this->declare_parameter<double>("target_x", 0.0);
-    this->declare_parameter<double>("target_y", 0.0);
+    this->declare_parameter<double>("target_x", 0.8);
+    this->declare_parameter<double>("target_y", 0.5);
     this->declare_parameter<double>("goal_tolerance", 0.05);
 
     // Servo 관련 파라미터 (조향각 제한 계산용)
@@ -138,51 +133,27 @@ private:
         RCLCPP_INFO(this->get_logger(), "Odom navigation node activated - Mission C");
         // Reset origin tracking when entering Mission C
         origin_set_ = false;
-        // Set initial target if not set
-        if (!target_set_) {
-          target_x_ = this->get_parameter("target_x").as_double();
-          target_y_ = this->get_parameter("target_y").as_double();
+        
+        {
+          std::lock_guard<std::mutex> lock(target_mutex_);
           target_set_ = true;
-          RCLCPP_INFO(this->get_logger(), "Initial target set from parameters: (%.2f, %.2f)", target_x_, target_y_);
+          goal_reached_ = false;
+          
+          // Reset PID variables for the new target
+          prev_cte_ = 0.0;
+          integral_cte_ = 0.0;
+          prev_speed_error_ = 0.0;
+          integral_speed_error_ = 0.0;
+          
+          RCLCPP_INFO(this->get_logger(), 
+            "New target set with offset (%.2f, %.2f)", 
+            target_x_, target_y_);
         }
       } else {
         RCLCPP_INFO(this->get_logger(), "Odom navigation node deactivated");
         // Clear origin when leaving Mission C
         origin_set_ = false;
       }
-    }
-  }
-
-  void transition_callback(const odom_msgs::msg::MyOdom::SharedPtr msg)
-  {
-    if (!is_active_) return;  // Only process if we're in Mission C
-    
-    // Get the position and yaw from the transition message (B sector's last position)
-    double transition_x = msg->x;
-    double transition_y = msg->y;
-    double transition_yaw = msg->yaw;  // This is both B sector's last yaw and C sector's first yaw
-    
-    // Add offset to the transition position (configurable via parameters)
-    double offset_x = this->declare_parameter("target_offset_x", 0.8);  // Default 0.8m forward
-    double offset_y = this->declare_parameter("target_offset_y", 0.5);  // Default 0.5m to the right
-    
-    {
-      std::lock_guard<std::mutex> lock(target_mutex_);
-      // Store target coordinates directly as offsets (relative to transition point)
-      target_x_ = offset_x;
-      target_y_ = offset_y;
-      target_set_ = true;
-      goal_reached_ = false;
-      
-      // Reset PID variables for the new target
-      prev_cte_ = 0.0;
-      integral_cte_ = 0.0;
-      prev_speed_error_ = 0.0;
-      integral_speed_error_ = 0.0;
-      
-      RCLCPP_INFO(this->get_logger(), 
-        "New target set with offset (%.2f, %.2f) from transition point", 
-        offset_x, offset_y);
     }
   }
 
@@ -407,12 +378,11 @@ private:
 
   // 멤버 변수
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mission_sub_;
-  rclcpp::Subscription<odom_msgs::msg::MyOdom>::SharedPtr transition_sub_;
-  bool is_active_;
   rclcpp::Subscription<odom_msgs::msg::MyOdom>::SharedPtr odom_sub_;
   rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_pub_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
 
+  bool is_active_;  // Mission C 활성화 상태
 
   double target_x_;
   double target_y_;
