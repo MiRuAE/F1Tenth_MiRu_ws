@@ -108,9 +108,6 @@ public:
     odom_sub_ = this->create_subscription<odom_msgs::msg::MyOdom>(
       "/my_odom", 10, std::bind(&OdomNavigationNode::odomCallback, this, _1));
 
-    // 터미널 입력을 처리할 별도 스레드 생성 (목표 좌표 갱신)
-    input_thread_ = std::thread(&OdomNavigationNode::readTargetFromConsole, this);
-    
     // 🔹 파라미터 변경 콜백 등록
     param_callback_handle_ = this->add_on_set_parameters_callback(
       std::bind(&OdomNavigationNode::onParameterChange, this, std::placeholders::_1));
@@ -121,9 +118,9 @@ public:
 
   ~OdomNavigationNode() override
   {
-    if (input_thread_.joinable()) {
+    /*if (input_thread_.joinable()) {
       input_thread_.join();
-    }
+    }*/
   }
 
 private:
@@ -137,6 +134,13 @@ private:
         RCLCPP_INFO(this->get_logger(), "Odom navigation node activated - Mission C");
         // Reset origin tracking when entering Mission C
         origin_set_ = false;
+        // Set initial target if not set
+        if (!target_set_) {
+          target_x_ = this->get_parameter("target_x").as_double();
+          target_y_ = this->get_parameter("target_y").as_double();
+          target_set_ = true;
+          RCLCPP_INFO(this->get_logger(), "Initial target set from parameters: (%.2f, %.2f)", target_x_, target_y_);
+        }
       } else {
         RCLCPP_INFO(this->get_logger(), "Odom navigation node deactivated");
         // Clear origin when leaving Mission C
@@ -325,7 +329,7 @@ private:
   }
 
   // 터미널 입력을 통해 목표 좌표를 갱신 (별도 스레드)
-  void readTargetFromConsole()
+  /*void readTargetFromConsole()
   {
     while (rclcpp::ok()) {
       std::cout << "Enter target_x and target_y separated by space (or 'q' to quit): ";
@@ -355,7 +359,7 @@ private:
       }
       RCLCPP_INFO(this->get_logger(), "New target set to (x: %f, y: %f)", target_x_, target_y_);
     }
-  }
+  }*/
   
   // 🔹 파라미터 변경 감지 콜백 함수
   rcl_interfaces::msg::SetParametersResult onParameterChange(

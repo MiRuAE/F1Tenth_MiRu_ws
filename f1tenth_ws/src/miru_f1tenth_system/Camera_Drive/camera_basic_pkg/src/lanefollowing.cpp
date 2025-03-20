@@ -14,7 +14,7 @@
 class LaneFollowingNode : public rclcpp::Node {
   public:
   LaneFollowingNode()
-  : Node("lane_following_node"), previous_error_(0.0), integral_(0.0), is_active_(false)
+  : Node("lane_following_node"), previous_error_(0.0), integral_(0.0), is_active_(true)
   {
     // Mission state subscriber
     mission_sub_ = this->create_subscription<std_msgs::msg::String>(
