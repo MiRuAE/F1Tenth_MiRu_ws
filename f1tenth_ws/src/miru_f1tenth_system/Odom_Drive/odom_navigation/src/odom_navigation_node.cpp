@@ -216,9 +216,13 @@ private:
     double x = std::cos(-origin_yaw_rad) * x_rel - std::sin(-origin_yaw_rad) * y_rel;
     double y = std::sin(-origin_yaw_rad) * x_rel + std::cos(-origin_yaw_rad) * y_rel;
 
-    // 목표 좌표와의 거리 계산 (target_x_, target_y_는 이미 상대 좌표)
-    double dx = target_x_ - x;
-    double dy = target_y_ - y;
+    // 현재 위치를 차량의 로컬 좌표계로 변환
+    double local_x = std::cos(-current_yaw_rad) * x - std::sin(-current_yaw_rad) * y;
+    double local_y = std::sin(-current_yaw_rad) * x + std::cos(-current_yaw_rad) * y;
+
+    // 목표 좌표와의 거리 계산 (target_x_, target_y_는 offset, local_x, local_y는 로컬 좌표)
+    double dx = target_x_ - local_x;
+    double dy = target_y_ - local_y;
     double distance = std::sqrt(dx * dx + dy * dy);
 
     RCLCPP_INFO(this->get_logger(), "Distance to goal: %f, Goal tolerance: %f", distance, goal_tolerance_);
@@ -245,13 +249,13 @@ private:
       lookahead_y = target_y_;
       effective_lookahead = distance;  // 남은 거리를 사용
     } else {
-      lookahead_x = x + lookahead_distance_ * std::cos(target_heading);
-      lookahead_y = y + lookahead_distance_ * std::sin(target_heading);
+      lookahead_x = local_x + lookahead_distance_ * std::cos(target_heading);
+      lookahead_y = local_y + lookahead_distance_ * std::sin(target_heading);
     }
 
     // 현재 위치 기준 Lookahead Point의 상대 좌표 (로컬 좌표계)
-    double rel_x = lookahead_x - x;
-    double rel_y = lookahead_y - y;
+    double rel_x = lookahead_x - local_x;
+    double rel_y = lookahead_y - local_y;
     double transformed_x = std::cos(-current_yaw_rad) * rel_x - std::sin(-current_yaw_rad) * rel_y;
     double transformed_y = std::sin(-current_yaw_rad) * rel_x + std::cos(-current_yaw_rad) * rel_y;
 
