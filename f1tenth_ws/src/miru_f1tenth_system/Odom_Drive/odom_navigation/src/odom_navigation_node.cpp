@@ -225,8 +225,8 @@ private:
     // 현재 위치 기준 Lookahead Point의 상대 좌표 (로컬 좌표계)
     double rel_x = lookahead_x - x;
     double rel_y = lookahead_y - y;
-    double transformed_x = std::cos(-current_yaw_rad) * rel_x - std::sin(-current_yaw_rad) * rel_y;
-    double transformed_y = std::sin(-current_yaw_rad) * rel_x + std::cos(-current_yaw_rad) * rel_y;
+    double transformed_x = std::cos(origin_yaw_rad - current_yaw_rad) * rel_x - std::sin(origin_yaw_rad - current_yaw_rad) * rel_y;
+    double transformed_y = std::sin(origin_yaw_rad - current_yaw_rad) * rel_x + std::cos(origin_yaw_rad - current_yaw_rad) * rel_y;
 
     // Pure Pursuit 조향각 계산
     double alpha = std::atan2(transformed_y, transformed_x);
