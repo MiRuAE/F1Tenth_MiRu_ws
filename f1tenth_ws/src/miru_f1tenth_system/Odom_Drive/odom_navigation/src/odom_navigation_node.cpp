@@ -12,7 +12,9 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "nav_msgs/msg/path.hpp"
 #include "visualization_msgs/msg/marker.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 
 using std::placeholders::_1;
 
