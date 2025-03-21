@@ -36,8 +36,8 @@ public:
       std::bind(&OdomNavigationNode::mission_callback, this, std::placeholders::_1));
 
     // 기존 목표 좌표 및 속도 관련 파라미터
-    this->declare_parameter<double>("target_x", 0.8);
-    this->declare_parameter<double>("target_y", 0.5);
+    this->declare_parameter<double>("target_x", 1.8);
+    this->declare_parameter<double>("target_y", 1.5);
     this->declare_parameter<double>("goal_tolerance", 0.05);
 
     // Servo 관련 파라미터 (조향각 제한 계산용)

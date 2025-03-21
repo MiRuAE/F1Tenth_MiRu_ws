@@ -335,8 +335,8 @@ private:
     double pixel_to_meter = 0.001;  // 픽셀을 미터로 변환하는 스케일
     
     // Calculate x, y coordinates in meters
-    double x = (lane_center_x - width/2) * pixel_to_meter;  // 중앙에서의 오프셋
-    double y = 0.5;  // 차량 앞쪽 0.5m 지점
+    double x = 0.5;  // 차량 앞쪽 0.5m 지점
+    double y = (lane_center_x - width/2) * pixel_to_meter;  // 중앙에서의 오프셋
     
     marker.pose.position.x = x;
     marker.pose.position.y = y;
