@@ -315,44 +315,44 @@ private:
 
     // Only publish drive command if in sector A
     if (is_active_) {
+      // Publish lane center marker for rviz visualization
+      visualization_msgs::msg::Marker marker;
+      marker.header.frame_id = "base_link";  // base_link 프레임 사용
+      marker.header.stamp = this->now();
+      marker.ns = "lane_center";
+      marker.id = 0;
+      marker.type = visualization_msgs::msg::Marker::SPHERE;
+      marker.action = visualization_msgs::msg::Marker::ADD;
+      
+      // Convert pixel coordinates to 3D space
+      double pixel_to_meter = 0.001;  // 픽셀을 미터로 변환하는 스케일
+      
+      // Calculate x, y coordinates in meters
+      double x = 0.5;  // 차량 앞쪽 0.5m 지점
+      double y = (lane_center_x - width/2) * pixel_to_meter;  // 중앙에서의 오프셋
+      
+      marker.pose.position.x = x;
+      marker.pose.position.y = y;
+      marker.pose.position.z = 0.0;
+      marker.pose.orientation.w = 1.0;
+      
+      marker.scale.x = 0.1;  // 10cm diameter
+      marker.scale.y = 0.1;
+      marker.scale.z = 0.1;
+      
+      marker.color.a = 1.0;
+      marker.color.r = 1.0;
+      marker.color.g = 0.0;
+      marker.color.b = 0.0;
+      
+      marker_pub_->publish(marker);
+
       auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
       drive_msg.header.stamp = this->now();
       drive_msg.drive.steering_angle = steering;
       drive_msg.drive.speed = drive_speed;
       drive_pub_->publish(drive_msg);
     }
-    
-    // Publish lane center marker for rviz visualization
-    visualization_msgs::msg::Marker marker;
-    marker.header.frame_id = "base_link";  // base_link 프레임 사용
-    marker.header.stamp = this->now();
-    marker.ns = "lane_center";
-    marker.id = 0;
-    marker.type = visualization_msgs::msg::Marker::SPHERE;
-    marker.action = visualization_msgs::msg::Marker::ADD;
-    
-    // Convert pixel coordinates to 3D space
-    double pixel_to_meter = 0.001;  // 픽셀을 미터로 변환하는 스케일
-    
-    // Calculate x, y coordinates in meters
-    double x = 0.5;  // 차량 앞쪽 0.5m 지점
-    double y = (lane_center_x - width/2) * pixel_to_meter;  // 중앙에서의 오프셋
-    
-    marker.pose.position.x = x;
-    marker.pose.position.y = y;
-    marker.pose.position.z = 0.0;
-    marker.pose.orientation.w = 1.0;
-    
-    marker.scale.x = 0.1;  // 10cm diameter
-    marker.scale.y = 0.1;
-    marker.scale.z = 0.1;
-    
-    marker.color.a = 1.0;
-    marker.color.r = 1.0;
-    marker.color.g = 0.0;
-    marker.color.b = 0.0;
-    
-    marker_pub_->publish(marker);
 
     rclcpp::Time end = this->now();
     RCLCPP_INFO(this->get_logger(), "Time: %f ms", (end.seconds() - start.seconds()) * 1000);
