@@ -10,6 +10,8 @@
 #include <chrono>
 #include <std_msgs/msg/string.hpp>
 #include "visualization_msgs/msg/marker.hpp"
+#include "nav_msgs/msg/path.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 
 class LaneFollowingNode : public rclcpp::Node {
   public:
@@ -72,6 +74,9 @@ class LaneFollowingNode : public rclcpp::Node {
     // Add marker publisher for rviz visualization
     marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("lane_center_marker", 10);
     
+    // Add path publisher for trajectory visualization
+    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("camera_path", 10);
+    
     prev_time_ = this->now();
     timer_ = this->create_wall_timer(
       std::chrono::milliseconds(15),
@@ -97,6 +102,22 @@ private:
         RCLCPP_INFO(this->get_logger(), "Camera node activated - Mission A");
       } else {
         RCLCPP_INFO(this->get_logger(), "Camera node deactivated");
+        
+        // Delete marker when deactivating
+        visualization_msgs::msg::Marker marker;
+        marker.header.frame_id = "base_link";
+        marker.header.stamp = this->now();
+        marker.ns = "lane_center";
+        marker.id = 0;
+        marker.type = visualization_msgs::msg::Marker::SPHERE;
+        marker.action = visualization_msgs::msg::Marker::DELETE;
+        marker_pub_->publish(marker);
+
+        // Clear path when deactivating
+        path_.poses.clear();
+        path_.header.frame_id = "base_link";
+        path_.header.stamp = this->now();
+        path_pub_->publish(path_);
       }
     }
   }
@@ -315,9 +336,9 @@ private:
 
     // Only publish drive command if in sector A
     if (is_active_) {
-      // Publish lane center marker for rviz visualization
+      // Publish lane center marker
       visualization_msgs::msg::Marker marker;
-      marker.header.frame_id = "base_link";  // base_link 프레임 사용
+      marker.header.frame_id = "base_link";
       marker.header.stamp = this->now();
       marker.ns = "lane_center";
       marker.id = 0;
@@ -346,6 +367,27 @@ private:
       marker.color.b = 0.0;
       
       marker_pub_->publish(marker);
+
+      // Add current position to path
+      geometry_msgs::msg::PoseStamped pose;
+      pose.header.frame_id = "base_link";
+      pose.header.stamp = this->now();
+      pose.pose.position.x = x;
+      pose.pose.position.y = y;
+      pose.pose.position.z = 0.0;
+      pose.pose.orientation.w = 1.0;
+      
+      path_.poses.push_back(pose);
+      
+      // Limit path size to prevent memory issues
+      if (path_.poses.size() > 1000) {
+        path_.poses.erase(path_.poses.begin());
+      }
+      
+      // Publish path
+      path_.header.frame_id = "base_link";
+      path_.header.stamp = this->now();
+      path_pub_->publish(path_);
 
       auto drive_msg = ackermann_msgs::msg::AckermannDriveStamped();
       drive_msg.header.stamp = this->now();
@@ -379,6 +421,10 @@ private:
   
   // Add marker publisher to member variables
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
+
+  // Add new member variables
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
+  nav_msgs::msg::Path path_;
 };
 
 int main(int argc, char **argv) {

@@ -113,6 +113,9 @@ public:
 
     // Add marker publisher for lane center visualization
     marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("odom_target_marker", 10);
+    
+    // Add path publisher for vehicle trajectory visualization
+    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("vehicle_path", 10);
   }
 
   ~OdomNavigationNode() override
@@ -153,6 +156,22 @@ private:
         RCLCPP_INFO(this->get_logger(), "Odom navigation node deactivated");
         // Clear origin when leaving Mission C
         origin_set_ = false;
+        
+        // Delete marker when deactivating
+        visualization_msgs::msg::Marker marker;
+        marker.header.frame_id = "base_link";
+        marker.header.stamp = this->get_clock()->now();
+        marker.ns = "odom_target";
+        marker.id = 0;
+        marker.type = visualization_msgs::msg::Marker::SPHERE;
+        marker.action = visualization_msgs::msg::Marker::DELETE;
+        marker_pub_->publish(marker);
+
+        // Clear path when deactivating
+        path_.poses.clear();
+        path_.header.frame_id = "map";
+        path_.header.stamp = this->get_clock()->now();
+        path_pub_->publish(path_);
       }
     }
   }
@@ -170,6 +189,27 @@ private:
       RCLCPP_INFO(this->get_logger(), "Set origin position for Mission C at (%.2f, %.2f, yaw: %.2f)",
                   origin_x_, origin_y_, origin_yaw_);
     }
+
+    // Add current position to path
+    geometry_msgs::msg::PoseStamped pose;
+    pose.header.frame_id = "map";
+    pose.header.stamp = this->get_clock()->now();
+    pose.pose.position.x = msg->x;
+    pose.pose.position.y = msg->y;
+    pose.pose.position.z = 0.0;
+    pose.pose.orientation.w = 1.0;  // Default orientation
+    
+    path_.poses.push_back(pose);
+    
+    // Limit path size to prevent memory issues
+    if (path_.poses.size() > 1000) {
+      path_.poses.erase(path_.poses.begin());
+    }
+    
+    // Publish path
+    path_.header.frame_id = "map";
+    path_.header.stamp = this->get_clock()->now();
+    path_pub_->publish(path_);
 
     if (!target_set_) {
       RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Target not set. Waiting for user input...");
@@ -424,6 +464,10 @@ private:
 
   // Add marker publisher to member variables
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
+
+  // Add new member variables for path tracking
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
+  nav_msgs::msg::Path path_;
 };
 
 int main(int argc, char ** argv)
