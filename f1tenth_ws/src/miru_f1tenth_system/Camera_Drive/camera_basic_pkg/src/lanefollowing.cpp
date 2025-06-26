@@ -12,6 +12,7 @@
 #include <visualization_msgs/msg/marker.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <math.h>
 
 class LaneFollowingNode : public rclcpp::Node {
   public:
@@ -49,7 +50,7 @@ class LaneFollowingNode : public rclcpp::Node {
     C = 10;
 
     // Gaussian blur parameter
-    gaus_blur_size = 5;
+    gaus_blur_size = 3;
 
     // Canny edge parameters
     canny_inf = 50;
@@ -123,10 +124,11 @@ private:
   }
 
   double speed_control(double slope) {
-    double k = 1.0;     
-    double x0 = 3.0;    
+    double slope_abs = abs(slope);
+    double k = 5.0;     
+    double x0 = M_PI / 4;    
     double sigmoid = 1.0 / (1.0 + std::exp(k * (slope - x0)));
-    double speed = 2.0 - 1.3 * sigmoid;
+    double speed = 2.0 - sigmoid;
     return speed;
   }
 
@@ -288,19 +290,23 @@ private:
     }
     
     
-    double max_slope = 30.0;
-    
+    double offset_radian = 0;
+    double max_slope = 0;
+    double slope = 0;
     //roi_v slope
     if (!left_lines_v.empty() && !right_lines_v.empty()) {
       max_slope = 2 / (left_avg_v.first + right_avg_v.first);
+      slope = atan(max_slope);
     } else if (!left_lines_v.empty()) {
       max_slope = std::abs(left_avg_v.first);
+      slope = atan(max_slope);
     } else if (!right_lines_v.empty()) {
       max_slope = std::abs(right_avg_v.first);
+      slope = atan(max_slope);
+    } else {
+      slope = offset_radian;
     }
-    
-    
-    RCLCPP_INFO(this->get_logger(), "%0.5f", max_slope);
+    RCLCPP_INFO(this->get_logger(), "%0.5f", slope);
     
     
     
@@ -332,7 +338,7 @@ private:
     previous_error_ = error;
     double drive_speed = 0.0;
     
-    drive_speed = speed_control(max_slope);
+    drive_speed = speed_control(slope);
 
     // Only publish drive command if in sector A
     if (is_active_) {
